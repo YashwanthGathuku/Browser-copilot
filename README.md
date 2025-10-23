@@ -1,4 +1,42 @@
-# React + TypeScript + Vite
+# Browser-copilot
+
+A Chrome extension that provides an AI-powered voice assistant for browser automation and interaction.
+
+## Features
+
+- **Voice Commands**: Control browser actions through natural speech
+- **AI Chat**: On-device AI assistant using Chrome's Prompt API
+- **Multi-language Support**: English, Spanish, and Japanese
+- **Page Interaction**: Scroll, click, fill forms, and navigate
+- **Content Analysis**: Page summarization and text extraction
+
+## Voice Commands
+
+- "scroll up/down" - Scroll page
+- "search [query]" - Google search
+- "open [website]" - Navigate to URL
+- "click [element]" - Click elements
+- "fill [field]=[value]" - Fill forms
+- "summarize" - Get page summary
+
+## Development
+
+Built with React 19, TypeScript, Vite, and Tailwind CSS.
+
+### Setup
+
+```bash
+npm install
+npm run dev
+```
+
+### Build
+
+```bash
+npm run build
+```
+
+## React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
