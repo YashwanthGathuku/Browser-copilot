@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Subtle typing indicator */
+.typing-dots {
+  display: inline-block;
+  width: 36px;
+  height: 12px;
+  --c: radial-gradient(currentColor 2px, transparent 3px);
+  background:
+    var(--c) 0%   50%,
+    var(--c) 50%  50%,
+    var(--c) 100% 50%;
+  background-size: 12px 12px;
+  background-repeat: no-repeat;
+  color: rgb(24 24 27);
+  animation: dots 1s infinite linear;
+}
+@keyframes dots {
+  33% { background-position: 0% 50%, 55% 50%, 100% 50%; }
+  66% { background-position: 0% 50%, 50% 50%, 95%  50%; }
+}
+
+/* Light/dark tweak */
+:root { color-scheme: light dark; }
