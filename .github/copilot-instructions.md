@@ -24,7 +24,7 @@ Browser Copilot (Nano Assistant) is a sophisticated Chrome extension that provid
 - `@crxjs/vite-plugin`: Chrome extension development with Vite
 - `chrome-types`: Chrome API type definitions
 - `clsx`: Conditional CSS class utility
-- `rolldown-vite`: Fast bundling
+- `rolldown-vite`: Fast bundling (Vite replacement using Rolldown bundler)
 
 ### Development Tools
 - ESLint with TypeScript support
@@ -129,11 +129,13 @@ src/
 - Handle missing APIs gracefully (e.g., Prompt API availability)
 
 ### Code Style
-- Use 2-space indentation
-- Use semicolons
-- Single quotes for strings (except JSX attributes)
-- No trailing commas in single-line objects
+- Use double quotes for string literals (as per existing codebase)
+- Use semicolons consistently
 - Arrow functions for callbacks and functional components
+- Follow ESLint configuration (see `eslint.config.js`):
+  - TypeScript ESLint recommended rules
+  - React Hooks recommended rules
+  - React Refresh rules for Vite HMR
 
 ## Testing & Validation
 
@@ -141,11 +143,12 @@ src/
 ```bash
 npm install          # Install dependencies
 npm run dev          # Start development server with HMR
-npm run dev:stable   # Stable development mode (reduced reloads)
 npm run lint         # Run ESLint
 npm run build        # Production build
 npm run preview      # Preview production build
 ```
+
+Note: Both `dev` and `dev:stable` run the same command (`vite --host`) - they serve for documentation purposes in the codebase.
 
 ### Testing the Extension
 1. Open Chrome and navigate to `chrome://extensions/`
@@ -169,7 +172,7 @@ npm run preview      # Preview production build
 ### Building
 - Build creates optimized extension in `dist/` directory
 - Source maps are disabled by default for production
-- Target is Chrome 120+
+- Build target is Chrome 120+ (see vite.config.ts `build.target`)
 
 ## Common Patterns
 
