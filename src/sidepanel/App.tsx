@@ -281,21 +281,21 @@ export default function App() {
 
   /* ---------------------------------- UI ----------------------------------- */
   return (
-    <div className="h-[600px] w-[380px] flex flex-col text-[13px] bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50 dark:from-zinc-950 dark:via-slate-900 dark:to-zinc-950">
+    <div className="h-[600px] w-[380px] flex flex-col text-[13px] bg-white dark:bg-zinc-950">
       {/* Header */}
-      <header className="px-4 py-3 border-b border-slate-200/80 dark:border-zinc-800/80 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm shadow-sm">
+      <header className="px-4 py-3 border-b border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
         <div className="flex items-center gap-3 mb-2">
           <div className="flex items-center gap-2 flex-1">
-            <div className="p-1.5 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 shadow-md">
+            <div className="p-1.5 rounded-lg bg-blue-600 shadow-sm">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
-            <div className="font-bold text-base bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+            <div className="font-bold text-base text-gray-900 dark:text-white">
               Nano Assistant
             </div>
           </div>
 
           <select
-            className="rounded-lg border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 py-1.5 text-xs font-medium shadow-sm hover:border-blue-400 dark:hover:border-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="rounded-lg border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 py-1.5 text-xs font-medium shadow-sm hover:border-blue-400 dark:hover:border-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             value={lang2}
             onChange={(e) => setLang2((e.target.value as Lang2) || "en")}
           >
@@ -306,23 +306,23 @@ export default function App() {
 
           <button
             onClick={() => setMessages([{ id: crypto.randomUUID(), role: "assistant", text: "Cleared. How can I help?", ts: Date.now() }])}
-            className="p-1.5 rounded-lg border border-slate-300 dark:border-zinc-700 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-700 transition-all shadow-sm"
+            className="p-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-all shadow-sm"
             title="Clear chat"
           >
-            <Trash2 className="w-4 h-4 text-slate-600 dark:text-zinc-400" />
+            <Trash2 className="w-4 h-4 text-gray-600 dark:text-zinc-400" />
           </button>
         </div>
 
         <div className="flex items-center gap-2">
           <div className={clsx(
-            "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold shadow-sm transition-all",
+            "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium",
             status.startsWith("Error")
-              ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200 border border-red-200 dark:border-red-800"
-              : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800"
+              ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200"
+              : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-200"
           )}>
             <div className={clsx(
-              "w-1.5 h-1.5 rounded-full animate-pulse",
-              status.startsWith("Error") ? "bg-red-500" : "bg-emerald-500"
+              "w-1.5 h-1.5 rounded-full",
+              status.startsWith("Error") ? "bg-red-500" : "bg-green-500 animate-pulse"
             )} />
             {status}
           </div>
@@ -343,32 +343,32 @@ export default function App() {
 
       {/* Agent dashboard */}
       {Object.values(agents).length > 0 && (
-        <section className="px-4 py-3 border-b border-slate-200/80 dark:border-zinc-800/80 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-sm">
-          <div className="text-xs font-bold text-slate-700 dark:text-zinc-300 mb-2 flex items-center gap-1.5">
+        <section className="px-4 py-3 border-b border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900">
+          <div className="text-xs font-semibold text-gray-700 dark:text-zinc-300 mb-2 flex items-center gap-1.5">
             <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
             Active Agents
           </div>
           <div className="flex flex-col gap-2">
             {Object.values(agents).map(ag => (
-              <div key={ag.id} className="rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 p-2.5 shadow-sm hover:shadow transition-shadow">
+              <div key={ag.id} className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 p-2.5 shadow-sm">
                 <div className="flex items-center justify-between text-[12px] mb-1.5">
-                  <div className="font-semibold text-slate-800 dark:text-zinc-100">{ag.title}</div>
+                  <div className="font-medium text-gray-800 dark:text-zinc-100">{ag.title}</div>
                   <div className={clsx(
-                    "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide",
+                    "px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide",
                     ag.state === "running" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
-                      : ag.state === "done" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
+                      : ag.state === "done" ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-200"
                       : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200"
                   )}>{ag.state}</div>
                 </div>
-                <div className="mt-1.5 h-2 rounded-full bg-slate-200 dark:bg-zinc-700 overflow-hidden shadow-inner">
+                <div className="mt-1.5 h-2 rounded-full bg-gray-200 dark:bg-zinc-700 overflow-hidden">
                   <div className={clsx(
                     "h-full rounded-full transition-all duration-500 ease-out",
-                    ag.state === "done" ? "bg-gradient-to-r from-emerald-500 to-emerald-600"
-                      : ag.state === "error" ? "bg-gradient-to-r from-red-500 to-red-600"
-                      : "bg-gradient-to-r from-blue-500 to-indigo-600"
+                    ag.state === "done" ? "bg-green-500"
+                      : ag.state === "error" ? "bg-red-500"
+                      : "bg-blue-600"
                   )} style={{ width: `${ag.progress}%` }} />
                 </div>
-                {ag.note && <div className="mt-1.5 text-[11px] text-slate-600 dark:text-zinc-400 italic">{ag.note}</div>}
+                {ag.note && <div className="mt-1.5 text-[11px] text-gray-600 dark:text-zinc-400 italic">{ag.note}</div>}
               </div>
             ))}
           </div>
@@ -376,13 +376,17 @@ export default function App() {
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 scroll-smooth">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 scroll-smooth bg-gray-50 dark:bg-zinc-900">
         {messages.map(m => <Bubble key={m.id} role={m.role} text={m.text} ts={m.ts} />)}
         {busy && (
-          <div className="flex items-end gap-2 animate-fade-in">
-            <Avatar role="assistant" />
-            <div className="rounded-2xl rounded-bl-sm bg-gradient-to-br from-slate-100 to-slate-200 dark:from-zinc-800 dark:to-zinc-700 px-4 py-3 shadow-sm">
-              <span className="typing-dots" />
+          <div className="flex gap-3 mb-4 animate-fade-in">
+            <div className="flex-shrink-0">
+              <Avatar role="assistant" />
+            </div>
+            <div className="flex flex-col gap-1 items-start">
+              <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 shadow-sm">
+                <span className="typing-dots" />
+              </div>
             </div>
           </div>
         )}
@@ -390,10 +394,10 @@ export default function App() {
       </div>
 
       {/* Controls */}
-      <div className="border-t border-slate-200/80 dark:border-zinc-800/80 p-3 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm shadow-lg">
+      <div className="border-t border-gray-200 dark:border-zinc-800 p-3 bg-white dark:bg-zinc-900 shadow-lg">
         <div className="flex gap-2 mb-2">
           <textarea
-            className="flex-1 resize-none rounded-xl border-2 border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:ring-blue-600 dark:focus:border-blue-600 transition-all placeholder:text-slate-400 dark:placeholder:text-zinc-500 shadow-sm"
+            className="flex-1 resize-none rounded-xl border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:ring-blue-600 dark:focus:border-blue-600 transition-all placeholder:text-gray-400 dark:placeholder:text-zinc-500"
             rows={2}
             placeholder='Try: "search hotels in DC and open the first result"'
             value={input}
@@ -404,10 +408,10 @@ export default function App() {
             <button
               onClick={() => (isListening ? stopASR() : startASR())}
               className={clsx(
-                "rounded-xl px-3 py-2 font-semibold text-sm transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-1.5",
+                "rounded-xl px-3 py-2 font-medium text-sm transition-all shadow-sm hover:shadow flex items-center justify-center gap-1.5",
                 isListening 
-                  ? "bg-gradient-to-br from-red-600 to-red-700 text-white hover:from-red-700 hover:to-red-800 ring-2 ring-red-400 ring-offset-2 dark:ring-offset-zinc-900" 
-                  : "bg-gradient-to-br from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700"
+                  ? "bg-red-600 text-white hover:bg-red-700 ring-2 ring-red-400 ring-offset-2 dark:ring-offset-zinc-900" 
+                  : "bg-blue-600 text-white hover:bg-blue-700"
               )}
               title={isListening ? "Stop voice" : "Start voice"}
             >
@@ -417,10 +421,10 @@ export default function App() {
               onClick={() => void handleText(input)}
               disabled={!input.trim() || busy}
               className={clsx(
-                "rounded-xl px-3 py-2 font-semibold text-sm transition-all shadow-md flex items-center justify-center gap-1.5",
+                "rounded-xl px-3 py-2 font-medium text-sm transition-all shadow-sm flex items-center justify-center gap-1.5",
                 (!input.trim() || busy) 
-                  ? "bg-slate-300 text-slate-500 cursor-not-allowed" 
-                  : "bg-gradient-to-br from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700 hover:shadow-lg"
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed dark:bg-zinc-700 dark:text-zinc-500" 
+                  : "bg-blue-600 text-white hover:bg-blue-700 hover:shadow"
               )}
               title="Send message"
             >
@@ -436,7 +440,7 @@ export default function App() {
               try { const res: any = await sendToContent({ type: "PING" }); setStatus(res?.ok ? "Agent reachable" : "No content script"); }
               catch (e: any) { setStatus(e?.message?.includes("Page can’t receive") ? "This page can’t run content scripts" : "Ping failed"); }
             }}
-            className="flex-1 rounded-lg px-3 py-2 bg-gradient-to-br from-slate-100 to-slate-200 hover:from-slate-200 hover:to-slate-300 dark:from-zinc-800 dark:to-zinc-700 dark:hover:from-zinc-700 dark:hover:to-zinc-600 transition-all shadow-sm hover:shadow font-medium text-xs flex items-center justify-center gap-1.5"
+            className="flex-1 rounded-lg px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 transition-all shadow-sm font-medium text-xs flex items-center justify-center gap-1.5"
           >
             <Radio className="w-3.5 h-3.5" />
             Ping
@@ -455,7 +459,7 @@ export default function App() {
                 setMessages(m => [...m, { id: crypto.randomUUID(), role: "assistant", ts: Date.now(), text: "⚠️ " + (e?.message || "Scan failed") }]);
               }
             }}
-            className="flex-1 rounded-lg px-3 py-2 bg-gradient-to-br from-slate-100 to-slate-200 hover:from-slate-200 hover:to-slate-300 dark:from-zinc-800 dark:to-zinc-700 dark:hover:from-zinc-700 dark:hover:to-zinc-600 transition-all shadow-sm hover:shadow font-medium text-xs flex items-center justify-center gap-1.5"
+            className="flex-1 rounded-lg px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 transition-all shadow-sm font-medium text-xs flex items-center justify-center gap-1.5"
           >
             <ScanLine className="w-3.5 h-3.5" />
             Scan
@@ -470,12 +474,12 @@ export default function App() {
 function Avatar({ role }: { role: Role }) {
   return (
     <div className={clsx(
-      "size-8 rounded-full flex items-center justify-center select-none shadow-md transition-transform hover:scale-105",
+      "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
       role === "user" 
-        ? "bg-gradient-to-br from-blue-600 to-indigo-600 text-white ring-2 ring-blue-200 dark:ring-blue-900" 
-        : "bg-gradient-to-br from-slate-200 to-slate-300 dark:from-zinc-700 dark:to-zinc-600 ring-2 ring-slate-300 dark:ring-zinc-600"
+        ? "bg-blue-600 text-white" 
+        : "bg-gray-200 dark:bg-zinc-700"
     )}>
-      {role === "user" ? <User className="w-4 h-4" /> : <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
+      {role === "user" ? <User className="w-4 h-4" /> : <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400" />}
     </div>
   );
 }
@@ -491,30 +495,53 @@ function Bubble({ role, text, ts }: { role: Role; text: string; ts: number }) {
     } catch {} 
   };
   return (
-    <div className={clsx("flex items-end gap-2.5", isUser ? "justify-end" : "justify-start")}>
-      {!isUser && <Avatar role="assistant" />}
-      <div className={clsx("max-w-[78%] group relative", isUser ? "order-2" : "order-1")}>
-        <div className={clsx(
-          "rounded-2xl px-4 py-2.5 whitespace-pre-wrap leading-relaxed shadow-md transition-all group-hover:shadow-lg",
-          isUser 
-            ? "bg-gradient-to-br from-blue-600 to-indigo-600 text-white rounded-br-sm" 
-            : "bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-700 rounded-bl-sm text-slate-900 dark:text-zinc-100 border border-slate-200 dark:border-zinc-600"
-        )}>
-          {text}
+    <div className={clsx("flex gap-3 mb-4", isUser ? "justify-end" : "justify-start")}>
+      {!isUser && (
+        <div className="flex-shrink-0">
+          <Avatar role="assistant" />
         </div>
-        <div className={clsx("flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity mt-1.5",
-          isUser ? "justify-end" : "justify-start")}>
-          <time className="text-[10px] text-slate-500 dark:text-zinc-400 font-medium">{new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
-          <button 
-            onClick={copy} 
-            className="flex items-center gap-1 text-[10px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors font-medium"
-          >
-            {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-            {copied ? "Copied!" : "Copy"}
-          </button>
+      )}
+      <div className={clsx("flex flex-col gap-1", isUser ? "items-end" : "items-start")}>
+        <div className="group relative">
+          <div className={clsx(
+            "relative px-4 py-3 rounded-2xl max-w-[85%] break-words whitespace-pre-wrap text-[14px] leading-relaxed shadow-sm transition-all duration-200",
+            isUser 
+              ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-tr-sm" 
+              : "bg-white dark:bg-zinc-800 text-gray-900 dark:text-gray-100 rounded-tl-sm border border-gray-200 dark:border-zinc-700"
+          )}>
+            <p className="m-0">{text}</p>
+          </div>
+          <div className={clsx(
+            "flex items-center gap-2 mt-1 px-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200",
+            isUser ? "justify-end" : "justify-start"
+          )}>
+            <time className="text-[11px] text-gray-500 dark:text-gray-400">
+              {new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </time>
+            <button 
+              onClick={copy} 
+              className="flex items-center gap-1 text-[11px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors px-1.5 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-zinc-700"
+            >
+              {copied ? (
+                <>
+                  <Check className="w-3 h-3" />
+                  <span>Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3" />
+                  <span>Copy</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
-      {isUser && <Avatar role="user" />}
+      {isUser && (
+        <div className="flex-shrink-0">
+          <Avatar role="user" />
+        </div>
+      )}
     </div>
   );
 }
