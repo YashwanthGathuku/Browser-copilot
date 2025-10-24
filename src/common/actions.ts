@@ -1,19 +1,37 @@
-// Helpers the content script can perform in the page
+// src/common/actions.ts
 import { escapeForXPath } from "./xpath";
+import { visualFeedback } from "./visual-feedback";
+import DOMPurify from 'dompurify'; // Added for XSS safety
 
 export function scroll(direction: "up" | "down", amount = 0.8) {
   window.scrollBy({
     top: (direction === "down" ? 1 : -1) * window.innerHeight * amount,
     behavior: "smooth",
   });
+  visualFeedback.showFeedback({
+    type: 'scroll',
+    message: `Scrolling ${direction} ${Math.round(amount * 100)}%`,
+    duration: 1000
+  });
 }
 
 export function openUrl(url: string) {
-  location.href = url;
+  location.href = DOMPurify.sanitize(url); // Prevent XSS in URL
+  visualFeedback.showFeedback({
+    type: 'navigate',
+    message: `Opening URL: ${url}`,
+    duration: 1500
+  });
 }
 
 export function searchWeb(query: string) {
-  location.href = "https://www.google.com/search?q=" + encodeURIComponent(query);
+  const sanitizedQuery = DOMPurify.sanitize(query); // Prevent XSS
+  location.href = `https://www.google.com/search?q=${encodeURIComponent(sanitizedQuery)}`;
+  visualFeedback.showFeedback({
+    type: 'search',
+    message: `Searching for: ${sanitizedQuery}`,
+    duration: 1500
+  });
 }
 
 export function extractText(): string {
@@ -30,11 +48,26 @@ export function clickByLabel(label: string): boolean {
     xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
   ).singleNodeValue as HTMLElement | null;
 
-  if (el) { el.click(); return true; }
+  if (el) {
+    el.click();
+    visualFeedback.showFeedback({
+      type: 'click',
+      element: el,
+      message: `Clicked: ${label}`,
+      duration: 2000
+    });
+    return true;
+  }
+  visualFeedback.showFeedback({
+    type: 'highlight',
+    message: `No element found for: ${label}`,
+    duration: 2000
+  });
   return false;
 }
 
 export function fillByLabel(label: string, value: string): boolean {
+  const sanitizedValue = DOMPurify.sanitize(value); // Prevent XSS
   const inputs = Array.from(
     document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input,textarea")
   );
@@ -45,9 +78,20 @@ export function fillByLabel(label: string, value: string): boolean {
   });
   if (target) {
     target.focus();
-    (target as any).value = value;
+    (target as HTMLInputElement).value = sanitizedValue; // Type assertion
     target.dispatchEvent(new Event("input", { bubbles: true }));
+    visualFeedback.showFeedback({
+      type: 'fill',
+      element: target,
+      message: `Filled: ${label} with ${sanitizedValue}`,
+      duration: 2000
+    });
     return true;
   }
+  visualFeedback.showFeedback({
+    type: 'highlight',
+    message: `No field found for: ${label}`,
+    duration: 2000
+  });
   return false;
 }

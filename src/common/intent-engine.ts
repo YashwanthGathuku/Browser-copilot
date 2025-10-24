@@ -1,3 +1,5 @@
+// src/common/intent-engine.ts
+
 import type { Intent } from "./intents";
 
 const urlRE = /^(https?:\/\/[^\s]+)$/i;

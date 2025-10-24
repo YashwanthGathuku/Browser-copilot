@@ -1,369 +1,292 @@
-// src/sidepanel/App.tsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
+import DOMPurify from "dompurify";
+import { inferIntentDeterministic } from "../common/intent-engine";
 
-// If your project doesn't include chrome types, this keeps TS happy.
-declare const chrome: any;
-
-/* ------------------------------ helpers ------------------------------ */
-
-function getLM(): any {
-  // Prefer the spec surface if present
-  return (globalThis as any).ai?.languageModel || (globalThis as any).LanguageModel || null;
-}
-
+/* -------------------------- Local panel-only types -------------------------- */
 type Role = "user" | "assistant";
 type Msg = { id: string; role: Role; text: string; ts: number };
+
+type PanelIntent =
+  | { type: "SCROLL"; direction: "up" | "down"; amount?: number }
+  | { type: "OPEN_URL"; url: string }
+  | { type: "SEARCH_WEB"; query: string }
+  | { type: "SUMMARY" }
+  | { type: "CLICK_LABEL"; label: string }
+  | { type: "FILL_FIELD"; label: string; value: string };
+
+type AgentStatus = {
+  id: string;
+  title: string;
+  tabId?: number | null;
+  steps: number;
+  progress: number;
+  state: "queued" | "running" | "done" | "error";
+  note?: string;
+};
 
 const SUPPORTED = ["en", "es", "ja"] as const;
 type Lang2 = (typeof SUPPORTED)[number];
 
-async function activeTabId(): Promise<number | null> {
-  if (typeof chrome === "undefined" || !chrome.tabs) return null;
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab?.id ?? null;
+/* -------------------------- Ambient runtime typings ------------------------- */
+declare global {
+  interface Window {
+    ai?: { languageModel?: { create(opts: any): Promise<any> } };
+    LanguageModel?: { create(opts: { languageCode: string }): Promise<any> };
+    SpeechRecognition?: any;
+    webkitSpeechRecognition?: any;
+  }
 }
 
+/* --------------------------------- helpers --------------------------------- */
+async function getActiveTab(): Promise<chrome.tabs.Tab | undefined> {
+  const [tab] = await chrome.tabs.query({ currentWindow: true, active: true });
+  return tab;
+}
+function isContentEligible(url?: string) {
+  if (!url) return false;
+  return !(
+    url.startsWith("chrome://") ||
+    url.startsWith("edge://") ||
+    url.startsWith("chrome-extension://") ||
+    url.startsWith("about:") ||
+    /^https:\/\/chromewebstore\.google\.com/.test(url)
+  );
+}
 async function sendToContent(msg: unknown) {
-  const id = await activeTabId();
-  if (!id) throw new Error("No active tab");
-  return chrome.tabs.sendMessage(id, msg);
+  const tab = await getActiveTab();
+  if (!tab?.id) throw new Error("No active tab");
+  if (!isContentEligible(tab.url)) throw new Error("Page can’t receive messages");
+  return chrome.tabs.sendMessage(tab.id, msg);
+}
+function getLM(): any {
+  return window.ai?.languageModel || window.LanguageModel || null;
 }
 
-/* --------------------------- intent detection --------------------------- */
-
-type Intent =
-  | { type: "SCROLL"; direction: "up" | "down"; amount?: number }
-  | { type: "SEARCH"; query: string }
-  | { type: "OPEN_URL"; url: string }
-  | { type: "SUMMARY" }
-  | { type: "NONE" };
-
-function parseIntent(raw: string): Intent {
-  const text = raw.trim().toLowerCase();
-
-  if (/^summari[sz]e\b/.test(text) || /\bsummary\b/.test(text)) {
-    return { type: "SUMMARY" };
-  }
-
-  if (/^scroll (down|up)\b/.test(text)) {
-    const dir = text.includes("down") ? "down" : "up";
-    return { type: "SCROLL", direction: dir, amount: 0.8 };
-  }
-
-  // “search for …”, “google …”
-  const mSearch =
-    text.match(/^search (?:for )?(.*)$/) ||
-    text.match(/^google (.*)$/) ||
-    text.match(/^find (.*)$/);
-  if (mSearch && mSearch[1].trim()) {
-    return { type: "SEARCH", query: mSearch[1].trim() };
-  }
-
-  // “open …” or a naked domain
-  const mOpen = text.match(/^open (.*)$/);
-  if (mOpen && mOpen[1].trim()) {
-    const target = normalizeUrl(mOpen[1].trim());
-    return { type: "OPEN_URL", url: target };
-  }
-  if (/^[a-z0-9.-]+\.(com|org|net|io|ai|dev|edu|gov)(\/.*)?$/i.test(text)) {
-    return { type: "OPEN_URL", url: normalizeUrl(text) };
-  }
-
-  return { type: "NONE" };
+/* -------------------- normalize unknown intent -> PanelIntent ---------------- */
+function isPanelIntent(i: any): i is PanelIntent {
+  return i && typeof i === "object" && typeof i.type === "string" &&
+    ["SCROLL", "OPEN_URL", "SEARCH_WEB", "SUMMARY", "CLICK_LABEL", "FILL_FIELD"].includes(i.type);
 }
-
-function normalizeUrl(s: string) {
-  try {
-    // if already valid url with protocol
-    new URL(s);
-    return s;
-  } catch {
-    return `https://${s.replace(/^https?:\/\//, "")}`;
+function normalizeIntent(raw: any): PanelIntent | undefined {
+  if (!raw || typeof raw !== "object" || !raw.type) return undefined;
+  switch (raw.type) {
+    case "SCROLL":     return { type: "SCROLL", direction: raw.direction === "up" ? "up" : "down", amount: typeof raw.amount === "number" ? raw.amount : 0.8 };
+    case "OPEN_URL":   return typeof raw.url === "string" && raw.url ? { type: "OPEN_URL", url: raw.url } : undefined;
+    case "SEARCH_WEB": return typeof raw.query === "string" && raw.query ? { type: "SEARCH_WEB", query: raw.query } : undefined;
+    case "SUMMARY":    return { type: "SUMMARY" };
+    case "CLICK_LABEL":return typeof raw.label === "string" && raw.label ? { type: "CLICK_LABEL", label: raw.label } : undefined;
+    case "FILL_FIELD": return typeof raw.label === "string" && typeof raw.value === "string" ? { type: "FILL_FIELD", label: raw.label, value: raw.value } : undefined;
+    default:           return undefined;
   }
 }
 
-/* ------------------------------ component ------------------------------ */
-
+/* -------------------------------- component -------------------------------- */
 export default function App() {
   const [messages, setMessages] = useState<Msg[]>([
-    {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      text: "Hi! I’m your on-device assistant. How can I help?",
-      ts: Date.now(),
-    },
+    { id: crypto.randomUUID(), role: "assistant", text: 'Hi! I’m your on-device assistant. Try: “search hotels in DC and open the first result”.', ts: Date.now() },
   ]);
-
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("Idle");
-  const [progress, setProgress] = useState<number | null>(null);
   const [lang2, setLang2] = useState<Lang2>("en");
 
+  // voice
+  const [isListening, setIsListening] = useState(false);
+  const [voiceLevel, setVoiceLevel] = useState(0);
+  const recRef = useRef<any>(null);
+  const animRef = useRef<number | null>(null);
+
+  // agent dashboard
+  const [agents, setAgents] = useState<Record<string, AgentStatus>>({});
+
+  // LLM session
   const sessionRef = useRef<any>(null);
 
-  // mic
-  const recRef = useRef<any>(null);
-  const listeningRef = useRef(false);
-
+  // auto-scroll chat
   const bottomRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), [messages, busy, progress]);
+  useEffect(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), [messages, busy]);
 
-  /* --------------------------- Prompt API session --------------------------- */
-
-  const modelOpts = useMemo(
-    () => ({
-      expectedInputs: [{ type: "text", languages: [lang2] }],
-      expectedOutputs: [{ type: "text", languages: [lang2] }],
-      languageCode: lang2,
-      monitor(m: any) {
-        m.addEventListener("downloadprogress", (e: any) => {
-          const pct = Math.round((e.loaded || 0) * 100);
-          setProgress(pct);
-          setStatus(`Downloading model… ${pct}%`);
-        });
-        m.addEventListener("error", () => setStatus("Model download error"));
-      },
-    }),
-    [lang2]
-  );
-
-  async function ensureSession() {
-    if (sessionRef.current) return sessionRef.current;
-    const lm = getLM();
-    if (!lm) throw new Error("Prompt API not found in this profile");
-
-    setStatus("Creating session…");
-    const s = await lm.create(modelOpts);
-    sessionRef.current = s;
-    setProgress(null);
-    setStatus("Ready");
-    return s;
+  /* ------------------------------ voice vis -------------------------------- */
+  function startVoiceVis() {
+    const tick = () => { setVoiceLevel((v) => (v + 13) % 100); animRef.current = requestAnimationFrame(tick); };
+    animRef.current = requestAnimationFrame(tick);
+  }
+  function stopVoiceVis() {
+    if (animRef.current != null) cancelAnimationFrame(animRef.current);
+    animRef.current = null; setVoiceLevel(0);
   }
 
-  // Dispose on language change
-  useEffect(() => {
-    (async () => {
-      const s = sessionRef.current;
-      if (!s) return;
-      try {
-        if (s.close) await s.close();
-        else if (s.destroy) s.destroy();
-      } catch {}
-      sessionRef.current = null;
-    })();
-  }, [lang2]);
-
-  /* --------------------------------- mic ---------------------------------- */
-
+  /* --------------------------------- ASR ----------------------------------- */
   function startASR() {
-    const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) {
-      setStatus("Speech not supported in this context");
-      return;
-    }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setStatus("Speech not supported."); return; }
     const rec = new SR();
-    rec.continuous = true;
-    rec.interimResults = true;
+    rec.continuous = true; rec.interimResults = true;
     rec.lang = `${lang2}-${lang2.toUpperCase()}`;
 
     let final = "";
-    rec.onstart = () => {
-      listeningRef.current = true;
-      setStatus("Listening…");
-    };
+    rec.onstart = () => { setIsListening(true); startVoiceVis(); setStatus("Listening…"); };
     rec.onerror = (e: any) => setStatus(`Mic error: ${e?.error ?? "unknown"}`);
-    rec.onend = () => {
-      listeningRef.current = false;
-      setStatus("Stopped");
-      recRef.current = null;
-    };
+    rec.onend   = () => { setIsListening(false); stopVoiceVis(); setStatus("Stopped."); recRef.current = null; };
     rec.onresult = async (ev: any) => {
       let interim = "";
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
         const r = ev.results[i];
-        if (r.isFinal) final += r[0].transcript;
-        else interim += r[0].transcript;
+        if (r.isFinal) final += r[0].transcript; else interim += r[0].transcript;
       }
-      const textNow = (final + " " + interim).trim();
-      setInput(textNow);
-
-      // when the latest chunk is final, try to act
-      if (ev.results[ev.results.length - 1]?.isFinal) {
-        const autoActed = await handleIntentFromText(textNow);
-        if (autoActed) {
-          final = "";
-          setInput("");
-        }
-      }
+      const text = (final + " " + interim).trim();
+      setInput(text);
+      if (ev.results[ev.results.length - 1]?.isFinal) await handleText(text);
     };
-
-    recRef.current = rec;
-    try {
-      rec.start();
-    } catch {}
+    recRef.current = rec; try { rec.start(); } catch {}
   }
-
   function stopASR() {
-    try {
-      recRef.current?.stop();
-    } catch {}
-    recRef.current = null;
+    try { recRef.current?.stop(); } catch {}
+    recRef.current = null; setIsListening(false); stopVoiceVis();
   }
 
-  /* --------------------------------- send --------------------------------- */
+  /* ------------------------------ LLM session ------------------------------ */
+  async function ensureSession() {
+    if (sessionRef.current) return sessionRef.current;
+    const lm = getLM();
+    if (!lm) throw new Error("Prompt API not found (enable Gemini Nano).");
+    setStatus("Creating session…");
+    // ✅ Chrome’s current Prompt API only accepts { languageCode }
+    const s = await lm.create({ languageCode: lang2 });
+    sessionRef.current = s; setStatus("Ready.");
+    return s;
+  }
+  useEffect(() => {
+    const s = sessionRef.current;
+    if (!s) return;
+    (async () => { try { await s?.close?.(); } catch {} try { s?.destroy?.(); } catch {} sessionRef.current = null; })();
+  }, [lang2]);
 
-  async function handleIntentFromText(text: string) {
-    const intent = parseIntent(text);
-    if (intent.type === "NONE") return false;
-
-    // We display the original text as a user message,
-    // and we’ll replace the assistant placeholder with progress/output.
-    await send(text, /*forceLLM*/ false, intent);
-    return true;
+  /* -------------------------- Agent dashboard utils ------------------------ */
+  function addAgent(title: string, steps = 1, tabId?: number | null) {
+    const id = Math.random().toString(36).slice(2, 6);
+    setAgents(a => ({ ...a, [id]: { id, title, steps, progress: 0, state: "running", tabId } }));
+    setMessages(m => [...m, { id: crypto.randomUUID(), role: "assistant", text: `🤖 Started: ${title}  Steps: ${steps}`, ts: Date.now() }]);
+    return id;
+  }
+  function stepAgent(id: string, pct: number, note?: string) {
+    setAgents(a => ({ ...a, [id]: { ...a[id], progress: Math.min(100, Math.max(a[id]?.progress ?? 0, pct)), note } }));
+  }
+  function finishAgent(id: string, ok: boolean, note?: string) {
+    setAgents(a => ({ ...a, [id]: { ...a[id], state: ok ? "done" : "error", progress: 100, note } }));
   }
 
-  async function send(raw?: string, forceLLM = false, intent?: Intent) {
-    const text = (raw ?? input).trim();
-    if (!text || busy) return;
-
-    setBusy(true);
-    setInput("");
-
-    const uid = crypto.randomUUID();
-    const aid = crypto.randomUUID();
-
-    setMessages((m) => [
-      ...m,
-      { id: uid, role: "user", text, ts: Date.now() },
-      { id: aid, role: "assistant", text: "…", ts: Date.now() },
-    ]);
-
+  /* ----------------------------- intent execute ---------------------------- */
+  async function executeIntent(i: PanelIntent): Promise<{ ok: boolean; text?: string }> {
     try {
-      // 1) Try to execute an intent (unless we explicitly force LLM chat)
-      const inferred = intent ?? (forceLLM ? ({ type: "NONE" } as Intent) : parseIntent(text));
-      if (inferred.type !== "NONE") {
-        const acted = await executeIntent(inferred);
-        if (inferred.type === "SUMMARY" && acted?.text) {
-          // summarize page text via LLM
-          const s = await ensureSession();
-          setStatus("Summarizing page…");
-          let out = "";
-          if (typeof s.promptStreaming === "function") {
-            for await (const chunk of s.promptStreaming(
-              `Provide a concise summary:\n\n${acted.text.slice(0, 6000)}`
-            )) {
-              out += chunk;
-              setMessages((m) => m.map((msg) => (msg.id === aid ? { ...msg, text: out } : msg)));
-            }
-          } else {
-            const r = await s.prompt(`Provide a concise summary:\n\n${acted.text.slice(0, 6000)}`);
-            out = typeof r === "string" ? r : r?.text ?? String(r ?? "");
-            setMessages((m) => m.map((msg) => (msg.id === aid ? { ...msg, text: out } : msg)));
-          }
-          setStatus("Ready");
-          setBusy(false);
-          return;
+      switch (i.type) {
+        case "OPEN_URL":   await chrome.tabs.create({ url: i.url }); return { ok: true };
+        case "SEARCH_WEB": await chrome.tabs.create({ url: `https://www.google.com/search?q=${encodeURIComponent(i.query)}` }); return { ok: true };
+        case "SCROLL":     await sendToContent({ type: "SCROLL", direction: i.direction, amount: i.amount ?? 0.8 }); return { ok: true };
+        case "SUMMARY": {
+          const res: any = await sendToContent({ type: "SUMMARY" });
+          return res?.text ? { ok: true, text: String(res.text) } : { ok: false };
         }
+        case "CLICK_LABEL":await sendToContent({ type: "CLICK_LABEL", label: i.label }); return { ok: true };
+        case "FILL_FIELD": await sendToContent({ type: "FILL_FIELD", label: i.label, value: DOMPurify.sanitize(i.value) }); return { ok: true };
+      }
+      return { ok: false };
+    } catch (e: any) {
+      return { ok: false, text: e?.message || "dispatch failed" };
+    }
+  }
 
-        // If action happened and there’s nothing else to say
-        if (acted && acted.ok && !acted.text) {
-          setMessages((m) =>
-            m.map((msg) => (msg.id === aid ? { ...msg, text: "✅ Done." } : msg))
-          );
-          setStatus("Ready");
-          setBusy(false);
-          return;
+  /* -------------------------------- routing -------------------------------- */
+  async function handleText(raw: string) {
+    const text = DOMPurify.sanitize((raw || input).trim());
+    if (!text) return;
+
+    setInput(""); setBusy(true);
+    const uid = crypto.randomUUID(); const aid = crypto.randomUUID();
+    setMessages(m => [...m, { id: uid, role: "user", text, ts: Date.now() }, { id: aid, role: "assistant", text: "…", ts: Date.now() }]);
+
+    try {
+      const intent = normalizeIntent(inferIntentDeterministic(text));
+
+      if (intent && isPanelIntent(intent)) {
+        if (intent.type === "SUMMARY") {
+          const acted = await executeIntent(intent);
+          if (acted.ok && acted.text) {
+            const s = await ensureSession();
+            setStatus("Summarizing page…");
+            let out = "";
+            if (typeof s.promptStreaming === "function") {
+              for await (const chunk of s.promptStreaming(`Provide a concise summary:\n\n${acted.text.slice(0, 6000)}`)) {
+                out += chunk; setMessages(m => m.map(msg => msg.id === aid ? { ...msg, text: out } : msg));
+              }
+            } else {
+              const r = await s.prompt(`Provide a concise summary:\n\n${acted.text.slice(0, 6000)}`);
+              out = typeof r === "string" ? r : r?.text ?? String(r ?? "");
+              setMessages(m => m.map(msg => msg.id === aid ? { ...msg, text: out } : msg));
+            }
+            setStatus("Ready."); setBusy(false); return;
+          }
+        } else {
+          const title =
+            intent.type === "SCROLL"     ? `Scroll ${intent.direction}` :
+            intent.type === "OPEN_URL"   ? "Navigate" :
+            intent.type === "SEARCH_WEB" ? "Search" :
+            intent.type === "CLICK_LABEL"? `Click "${intent.label}"` :
+            intent.type === "FILL_FIELD" ? `Fill "${intent.label}"` : intent.type;
+
+          const agId = addAgent(title, 1);
+          stepAgent(agId, 40);
+          const acted = await executeIntent(intent);
+          stepAgent(agId, 90);
+          finishAgent(agId, acted.ok, acted.text);
+          setMessages(m => m.map(msg => msg.id === aid ? { ...msg, text: acted.ok ? "✅ Done." : `⚠️ ${acted.text || "Failed"}` } : msg));
+          setStatus("Ready."); setBusy(false); return;
         }
       }
 
-      // 2) Fall back to normal LLM chat
-      const s = await ensureSession();
-      setStatus("Thinking…");
-
+      // Not actionable → normal on-device chat
+      const s = await ensureSession(); setStatus("Thinking…");
       let out = "";
       if (typeof s.promptStreaming === "function") {
         for await (const chunk of s.promptStreaming(text)) {
-          out += chunk;
-          setMessages((m) => m.map((msg) => (msg.id === aid ? { ...msg, text: out } : msg)));
+          out += chunk; setMessages(m => m.map(msg => msg.id === aid ? { ...msg, text: out } : msg));
         }
       } else {
-        const res = await s.prompt(text);
-        out = typeof res === "string" ? res : res?.text ?? String(res ?? "");
-        setMessages((m) => m.map((msg) => (msg.id === aid ? { ...msg, text: out } : msg)));
+        const r = await s.prompt(text);
+        out = typeof r === "string" ? r : r?.text ?? String(r ?? "");
+        setMessages(m => m.map(msg => msg.id === aid ? { ...msg, text: out } : msg));
       }
-      setStatus("Ready");
+      setStatus("Ready.");
     } catch (e: any) {
-      setMessages((m) =>
-        m.map((msg) =>
-          msg.id === aid ? { ...msg, text: "⚠️ " + (e?.message || "Unknown error") } : msg
-        )
-      );
-      setStatus("Error");
+      setMessages(m => m.map(msg => msg.id === aid ? { ...msg, text: "⚠️ " + (e?.message || "Unknown error") } : msg));
+      setStatus("Error.");
     } finally {
       setBusy(false);
     }
   }
 
-  async function executeIntent(i: Intent): Promise<{ ok: boolean; text?: string }> {
-    try {
-      switch (i.type) {
-        case "SCROLL": {
-          await sendToContent({ type: "SCROLL", direction: i.direction, amount: i.amount ?? 0.8 });
-          return { ok: true };
-        }
-        case "SEARCH": {
-          const url = `https://www.google.com/search?q=${encodeURIComponent(i.query)}`;
-          await chrome.tabs.create?.({ url });
-          return { ok: true };
-        }
-        case "OPEN_URL": {
-          await chrome.tabs.create?.({ url: i.url });
-          return { ok: true };
-        }
-        case "SUMMARY": {
-          const res = await sendToContent({ type: "SUMMARY" }); // content returns { ok, text }
-          return res?.text ? { ok: true, text: String(res.text) } : { ok: false };
-        }
-        default:
-          return { ok: false };
-      }
-    } catch (err) {
-      // If content script isn’t injected you’ll get “Could not establish connection…”
-      throw err;
-    }
-  }
-
-  function clearChat() {
-    setMessages([
-      {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        text: "Cleared. How can I help?",
-        ts: Date.now(),
-      },
-    ]);
-  }
-
-  /* --------------------------------- UI ---------------------------------- */
-
+  /* ---------------------------------- UI ----------------------------------- */
   return (
     <div className="h-[600px] w-[380px] flex flex-col text-[13px] bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-900 dark:to-zinc-950">
       {/* Header */}
       <header className="px-3 py-2 border-b border-zinc-200/70 dark:border-zinc-800/70 flex items-center gap-2">
         <div className="font-semibold">Nano Assistant</div>
-        <div
-          className={clsx(
-            "ml-2 px-2 py-[2px] rounded-full text-[11px] font-medium",
-            progress !== null
-              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
-              : status.startsWith("Error")
-              ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200"
-              : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
-          )}
-        >
-          {progress !== null ? `Downloading ${progress}%` : status}
+
+        <div className={clsx(
+          "ml-2 px-2 py-[2px] rounded-full text-[11px] font-medium",
+          status.startsWith("Error")
+            ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200"
+            : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
+        )}>
+          {status}
+        </div>
+
+        {/* voice bars */}
+        <div className="ml-2 h-5 flex items-end gap-[2px]">
+          {isListening && [1,2,3,4,5].map(i => (
+            <div key={i} className="w-[3px] bg-blue-500 rounded-sm" style={{ height: `${Math.max(4, (voiceLevel / 2) + Math.random() * 8)}px` }} />
+          ))}
         </div>
 
         <select
@@ -377,7 +300,7 @@ export default function App() {
         </select>
 
         <button
-          onClick={clearChat}
+          onClick={() => setMessages([{ id: crypto.randomUUID(), role: "assistant", text: "Cleared. How can I help?", ts: Date.now() }])}
           className="ml-2 rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800"
           title="Clear chat"
         >
@@ -385,22 +308,40 @@ export default function App() {
         </button>
       </header>
 
+      {/* Agent dashboard */}
+      <section className="px-3 py-2 border-b border-zinc-200/70 dark:border-zinc-800/70">
+        <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Active Agents</div>
+        {Object.values(agents).length === 0 && <div className="text-[11px] text-zinc-500">No agents running.</div>}
+        <div className="flex flex-col gap-2">
+          {Object.values(agents).map(ag => (
+            <div key={ag.id} className="rounded-md border border-zinc-200 dark:border-zinc-700 p-2">
+              <div className="flex items-center justify-between text-[12px]">
+                <div className="font-medium">{ag.title}</div>
+                <div className={clsx(
+                  "px-1.5 py-[1px] rounded text-[10px]",
+                  ag.state === "running" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
+                    : ag.state === "done" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
+                    : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200"
+                )}>{ag.state}</div>
+              </div>
+              <div className="mt-1 h-1.5 rounded bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+                <div className="h-full bg-blue-600 dark:bg-blue-500" style={{ width: `${ag.progress}%` }} />
+              </div>
+              {ag.note && <div className="mt-1 text-[11px] text-zinc-500">{ag.note}</div>}
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 scroll-smooth">
-        {messages.map((m) => (
-          <Bubble key={m.id} role={m.role} text={m.text} ts={m.ts} />
-        ))}
-
-        {/* typing indicator */}
+        {messages.map(m => <Bubble key={m.id} role={m.role} text={m.text} ts={m.ts} />)}
         {busy && (
           <div className="flex items-end gap-2">
             <Avatar role="assistant" />
-            <div className="rounded-2xl rounded-bl-sm bg-zinc-100 dark:bg-zinc-800 px-3 py-2">
-              <span className="typing-dots" />
-            </div>
+            <div className="rounded-2xl rounded-bl-sm bg-zinc-100 dark:bg-zinc-800 px-3 py-2"><span className="typing-dots" /></div>
           </div>
         )}
-
         <div ref={bottomRef} />
       </div>
 
@@ -410,34 +351,23 @@ export default function App() {
           <textarea
             className="flex-1 resize-none rounded-xl border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
             rows={2}
-            placeholder="Say it or type it…"
+            placeholder='Try: "search hotels in DC and open the first result"'
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                void send();
-              }
-            }}
+            onChange={(e) => setInput(DOMPurify.sanitize(e.target.value))}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void handleText(input); } }}
           />
           <div className="flex flex-col gap-2">
             <button
-              onClick={() => (listeningRef.current ? stopASR() : startASR())}
-              className={clsx(
-                "rounded-lg px-3 py-2 font-semibold",
-                listeningRef.current ? "bg-red-600 text-white" : "bg-zinc-900 text-white dark:bg-zinc-700"
-              )}
-              title={listeningRef.current ? "Stop voice" : "Start voice"}
+              onClick={() => (isListening ? stopASR() : startASR())}
+              className={clsx("rounded-lg px-3 py-2 font-semibold", isListening ? "bg-red-600 text-white" : "bg-zinc-900 text-white dark:bg-zinc-700")}
+              title={isListening ? "Stop voice" : "Start voice"}
             >
-              {listeningRef.current ? "Stop" : "Voice"}
+              {isListening ? "Stop" : "Voice"}
             </button>
             <button
-              onClick={() => void send()}
+              onClick={() => void handleText(input)}
               disabled={!input.trim() || busy}
-              className={clsx(
-                "rounded-lg px-3 py-2 font-semibold",
-                !input.trim() || busy ? "bg-zinc-300 text-zinc-500 cursor-not-allowed" : "bg-blue-600 text-white"
-              )}
+              className={clsx("rounded-lg px-3 py-2 font-semibold", (!input.trim() || busy) ? "bg-zinc-300 text-zinc-500 cursor-not-allowed" : "bg-blue-600 text-white")}
               title="Send"
             >
               Send
@@ -445,72 +375,66 @@ export default function App() {
           </div>
         </div>
 
-        <details className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
-          <summary className="cursor-pointer hover:text-zinc-800 dark:hover:text-zinc-200">
-            Voice tips
-          </summary>
-          <div className="mt-1 space-y-1 text-[10px]">
-            <div>• “scroll down / scroll up”</div>
-            <div>• “search for nvidia gtc”</div>
-            <div>• “open nvidia.com” or “nvidia.com”</div>
-            <div>• “summarize” (summarizes the current page)</div>
-          </div>
-        </details>
+        {/* quick tools */}
+        <div className="mt-2 flex gap-2">
+          <button
+            onClick={async () => {
+              try { const res: any = await sendToContent({ type: "PING" }); setStatus(res?.ok ? "Agent reachable" : "No content script"); }
+              catch (e: any) { setStatus(e?.message?.includes("Page can’t receive") ? "This page can’t run content scripts" : "Ping failed"); }
+            }}
+            className="rounded-md px-3 py-1.5 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+          >📡 Ping</button>
+
+          <button
+            onClick={async () => {
+              try {
+                const agId = addAgent("Scan page", 1);
+                stepAgent(agId, 40);
+                const res: any = await sendToContent({ type: "AGENT_SCAN" });
+                stepAgent(agId, 90); finishAgent(agId, true);
+                setMessages(m => [...m, { id: crypto.randomUUID(), role: "assistant", ts: Date.now(),
+                  text: `Scan:\n• title: ${res?.insights?.title}\n• links: ${res?.insights?.elements?.filter?.((e: any) => e.role === "link")?.length ?? 0}` }]);
+              } catch (e: any) {
+                setMessages(m => [...m, { id: crypto.randomUUID(), role: "assistant", ts: Date.now(), text: "⚠️ " + (e?.message || "Scan failed") }]);
+              }
+            }}
+            className="rounded-md px-3 py-1.5 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+          >🔍 Scan</button>
+        </div>
       </div>
     </div>
   );
 }
 
-/* -------------------------------- UI bits -------------------------------- */
-
+/* ------------------------------- UI widgets -------------------------------- */
 function Avatar({ role }: { role: Role }) {
   return (
-    <div
-      className={clsx(
-        "size-7 rounded-full flex items-center justify-center select-none",
-        role === "user" ? "bg-blue-600 text-white" : "bg-zinc-200 dark:bg-zinc-700"
-      )}
-    >
+    <div className={clsx(
+      "size-7 rounded-full flex items-center justify-center select-none",
+      role === "user" ? "bg-blue-600 text-white" : "bg-zinc-200 dark:bg-zinc-700"
+    )}>
       {role === "user" ? "🧑" : "✨"}
     </div>
   );
 }
-
 function Bubble({ role, text, ts }: { role: Role; text: string; ts: number }) {
   const isUser = role === "user";
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {}
-  };
-
+  const copy = async () => { try { await navigator.clipboard.writeText(text); } catch {} };
   return (
     <div className={clsx("flex items-end gap-2", isUser ? "justify-end" : "justify-start")}>
       {!isUser && <Avatar role="assistant" />}
       <div className={clsx("max-w-[78%] group relative", isUser ? "order-2" : "order-1")}>
-        <div
-          className={clsx(
-            "rounded-2xl px-3 py-2 whitespace-pre-wrap leading-relaxed shadow-sm",
-            isUser
-              ? "bg-gradient-to-br from-blue-600 to-indigo-600 text-white rounded-br-sm"
-              : "bg-zinc-100 dark:bg-zinc-800 rounded-bl-sm text-zinc-900 dark:text-zinc-100"
-          )}
-        >
+        <div className={clsx(
+          "rounded-2xl px-3 py-2 whitespace-pre-wrap leading-relaxed shadow-sm",
+          isUser ? "bg-gradient-to-br from-blue-600 to-indigo-600 text-white rounded-br-sm"
+                 : "bg-zinc-100 dark:bg-zinc-800 rounded-bl-sm text-zinc-900 dark:text-zinc-100"
+        )}>
           {text}
         </div>
-        <div
-          className={clsx(
-            "flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mt-1",
-            isUser ? "justify-end" : "justify-start"
-          )}
-        >
-          <time className="text-[10px] text-zinc-500">
-            {new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-          </time>
-          <button onClick={copy} className="text-[10px] text-blue-600 hover:underline">
-            Copy
-          </button>
+        <div className={clsx("flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mt-1",
+          isUser ? "justify-end" : "justify-start")}>
+          <time className="text-[10px] text-zinc-500">{new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+          <button onClick={copy} className="text-[10px] text-blue-600 hover:underline">Copy</button>
         </div>
       </div>
       {isUser && <Avatar role="user" />}

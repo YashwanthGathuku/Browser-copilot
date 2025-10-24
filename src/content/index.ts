@@ -1,124 +1,167 @@
 // src/content/index.ts
-import { escapeForXPath } from "../common/xpath";
+import type { Action } from "../types/agent-types";
+import { executeAction, scanPage } from "./agent"; // your content helpers
 
-export { escapeForXPath } from "../common/xpath";
+import DOMPurify from "dompurify";
 
-// Define message interface for content script communication
-interface ContentScriptMessage {
-  type?: "PING" | "SCROLL" | "OPEN_URL" | "SEARCH_WEB" | "SUMMARY" | "CLICK_LABEL" | "FILL_FIELD";
-  command?: "scroll:down" | "scroll:up" | "page:text" | string;
-  direction?: "up" | "down";
-  amount?: number;
-  url?: string;
-  query?: string;
-  label?: string;
-  value?: string;
-  [key: string]: any;
-}
-
-interface PageTextResponse {
-  text: string;
-}
-
-interface MessageSender {
-  id?: string;
-  tab?: { id?: number } | null;
-  url?: string;
-  frameId?: number;
-  origin?: string;
-  [key: string]: any;
-}
+type ContentMsg =
+  | { type: "PING" }
+  | { type: "SCROLL"; amount?: number; direction?: "up" | "down" }
+  | { type: "OPEN_URL"; url: string }
+  | { type: "SEARCH_WEB"; query: string }
+  | { type: "SUMMARY" }
+  | { type: "CLICK_LABEL"; label: string }
+  | { type: "CLICK_SELECTOR"; selector: string }
+  | { type: "FILL_FIELD"; label?: string; value: string; selector?: string }
+  | { type: "SET_DATE"; selector: string; valueISO: string }
+  | { type: "SELECT_OPTION"; selector: string; optionText: string }
+  | { type: "SUBMIT"; selector?: string }
+  | { type: "DEMO" };
 
 type SendResponse = (response?: unknown) => void;
 
-// Handle messages from background or side panel
-chrome.runtime.onMessage.addListener(
-  (req: ContentScriptMessage, sender: MessageSender, sendResponse: SendResponse) => {
-    if (!req) return;
-    if (req?.type === "PING") {
-      sendResponse({ ok: true, ctx: "content" });
-      return true;
+const $all = <T extends Element = Element>(sel: string, root: ParentNode = document) =>
+  Array.from(root.querySelectorAll<T>(sel));
+
+const textOf = (el?: Element | null) => (el?.textContent || "").replace(/\s+/g, " ").trim();
+
+function findByText(label: string): HTMLElement | null {
+  const lower = label.toLowerCase();
+  const candidates = $all<HTMLElement>("a,button,input,[role='button'],span");
+  for (const el of candidates) {
+    const t = (el.getAttribute("aria-label") || el.getAttribute("title") || textOf(el)).toLowerCase();
+    if (t.includes(lower)) return el;
+  }
+  return null;
+}
+
+chrome.runtime.onMessage.addListener((req: ContentMsg, _sender: chrome.runtime.MessageSender, send: SendResponse) => {
+  (async () => {
+    if (req.type === "PING") {
+      send({ ok: true, ctx: "content" });
+      return;
     }
 
-    // Handle new voice command format
     if (req.type === "SCROLL") {
-      const direction = req.direction || "down";
-      const amount = req.amount || 0.8;
-      window.scrollBy({ 
-        top: (direction === "down" ? 1 : -1) * window.innerHeight * amount, 
-        behavior: "smooth" 
-      });
-      sendResponse({ ok: true });
-      return true;
+      const amount = (req.amount ?? 0.8) * window.innerHeight * (req.direction === "up" ? -1 : 1);
+      window.scrollBy({ top: amount, behavior: "smooth" });
+      send({ ok: true });
+      return;
     }
 
-    if (req.type === "OPEN_URL" && req.url) {
-      window.location.href = req.url;
-      return; // No response for navigation
+    if (req.type === "OPEN_URL") {
+      location.href = DOMPurify.sanitize(req.url);
+      return;
     }
 
-    if (req.type === "SEARCH_WEB" && req.query) {
-      window.location.href = "https://www.google.com/search?q=" + encodeURIComponent(req.query);
-      return; // No response for navigation
+    if (req.type === "SEARCH_WEB") {
+      const q = DOMPurify.sanitize(req.query);
+      location.href = `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+      return;
     }
 
     if (req.type === "SUMMARY") {
       const text = document.body ? document.body.innerText || "" : "";
-      sendResponse({ ok: true, text });
-      return true;
+      send({ ok: true, text });
+      return;
     }
 
-    if (req.type === "CLICK_LABEL" && req.label) {
-      const normalizedLabel = req.label.toLowerCase();
-      const xp = `//*[self::button or self::a or self::input or self::span]
-                  [contains(translate(normalize-space(.),
-                  'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),
-                  '${escapeForXPath(normalizedLabel)}')]`;
-      const el = document.evaluate(
-        xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
-      ).singleNodeValue as HTMLElement | null;
+    if (req.type === "CLICK_LABEL") {
+      const el = findByText(req.label);
+      if (el) { el.click(); send({ ok: true }); }
+      else send({ ok: false, error: "not found" });
+      return;
+    }
 
-      if (el) { 
-        el.click(); 
-        sendResponse({ ok: true }); 
-      } else {
-        sendResponse({ ok: false });
+    if (req.type === "CLICK_SELECTOR") {
+      const el = document.querySelector(req.selector) as HTMLElement | null;
+      if (el) { el.click(); send({ ok: true }); }
+      else send({ ok: false, error: "not found" });
+      return;
+    }
+
+    if (req.type === "FILL_FIELD") {
+      const val = DOMPurify.sanitize(req.value);
+      let input: HTMLInputElement | HTMLTextAreaElement | null = null;
+
+      if (req.selector) {
+        input = document.querySelector(req.selector) as any;
+      } else if (req.label) {
+        const all = $all<HTMLInputElement | HTMLTextAreaElement>("input,textarea");
+        input = all.find((i) => {
+          const lbl = i.id ? document.querySelector(`label[for="${i.id}"]`) : null;
+          const name = ((lbl?.textContent || i.placeholder || "").toLowerCase());
+          return name.includes(req.label!.toLowerCase());
+        }) ?? null;
       }
-      return true;
+
+      if (input) {
+        input.focus();
+        (input as any).value = val;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        send({ ok: true });
+      } else send({ ok: false, error: "no input" });
+      return;
     }
 
-    if (req.type === "FILL_FIELD" && req.label && req.value) {
-      const inputs = Array.from(
-        document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input,textarea")
-      );
-      const target = inputs.find(i => {
-        const lbl = i.id ? document.querySelector(`label[for="${i.id}"]`) : null;
-        const text = (lbl?.textContent || i.placeholder || "").toLowerCase();
-        return text.includes(req.label!.toLowerCase());
-      });
-      if (target) {
-        target.focus();
-        (target as any).value = req.value;
-        target.dispatchEvent(new Event("input", { bubbles: true }));
-        sendResponse({ ok: true });
-      } else {
-        sendResponse({ ok: false });
+    if (req.type === "SET_DATE") {
+      const el = document.querySelector(req.selector) as HTMLInputElement | null;
+      if (el) {
+        el.value = req.valueISO;
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        send({ ok: true });
+      } else send({ ok: false });
+      return;
+    }
+
+    if (req.type === "SELECT_OPTION") {
+      const sel = document.querySelector(req.selector) as HTMLSelectElement | null;
+      if (sel) {
+        const opt = Array.from(sel.options).find(o => o.textContent?.trim().toLowerCase() === req.optionText.toLowerCase());
+        if (opt) {
+          sel.value = opt.value;
+          sel.dispatchEvent(new Event("change", { bubbles: true }));
+          send({ ok: true });
+        } else send({ ok: false, error: "option not found" });
+      } else send({ ok: false });
+      return;
+    }
+
+    if (req.type === "SUBMIT") {
+      const form = (req.selector ? document.querySelector(req.selector) : document.querySelector("form")) as HTMLFormElement | null;
+      if (form) { form.requestSubmit(); send({ ok: true }); }
+      else send({ ok: false });
+      return;
+    }
+
+    if (req.type === "DEMO") {
+      // simple visual cue
+      document.body.style.outline = "2px solid #60a5fa";
+      setTimeout(() => (document.body.style.outline = ""), 1500);
+      send({ ok: true });
+      return;
+    }
+  })();
+
+  return true; // async
+});
+
+chrome.runtime.onMessage.addListener((
+  req: { type: string; actions?: Action[] },
+  _sender: chrome.runtime.MessageSender,
+  sendResponse: (res?: unknown) => void
+) => {
+  (async () => {
+    if (req.type === "AGENT_EXECUTE" && Array.isArray(req.actions)) {
+      for (const a of req.actions) {
+        const r = await executeAction(a);
+        if (!r.ok) { sendResponse({ ok: false }); return; }
       }
-      return true;
+      // optional: re-scan to get new insights
+      const insights = scanPage();
+      sendResponse({ ok: true, insights });
+      return;
     }
-
-    // Handle legacy command format for backward compatibility
-    if (req.command === "scroll:down") {
-      window.scrollBy({ top: window.innerHeight * 0.8, behavior: "smooth" });
-    }
-    if (req.command === "scroll:up") {
-      window.scrollBy({ top: -window.innerHeight * 0.8, behavior: "smooth" });
-    }
-
-    if (req.command === "page:text") {
-      const text = document.body ? document.body.innerText || "" : "";
-      sendResponse({ text } as PageTextResponse);
-      return true; // Indicates async response
-    }
-  }
-);
+  })();
+  return true; // keep channel open
+});

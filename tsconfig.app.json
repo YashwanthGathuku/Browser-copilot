@@ -25,5 +25,5 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src", "manifest.config.ts","src/types/**/*.d.ts"]
+  "include": ["src", "manifest.config.ts","src/types"]
 }
