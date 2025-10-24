@@ -1,4 +1,5 @@
 // Helpers the content script can perform in the page
+import { escapeForXPath } from "./xpath";
 
 export function scroll(direction: "up" | "down", amount = 0.8) {
   window.scrollBy({
@@ -20,10 +21,11 @@ export function extractText(): string {
 }
 
 export function clickByLabel(label: string): boolean {
+  const normalizedLabel = label.toLowerCase();
   const xp = `//*[self::button or self::a or self::input or self::span]
               [contains(translate(normalize-space(.),
               'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),
-              '${label.toLowerCase()}')]`;
+              '${escapeForXPath(normalizedLabel)}')]`;
   const el = document.evaluate(
     xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
   ).singleNodeValue as HTMLElement | null;

@@ -1,4 +1,8 @@
 // src/content/index.ts
+import { escapeForXPath } from "../common/xpath";
+
+export { escapeForXPath } from "../common/xpath";
+
 // Define message interface for content script communication
 interface ContentScriptMessage {
   type?: "PING" | "SCROLL" | "OPEN_URL" | "SEARCH_WEB" | "SUMMARY" | "CLICK_LABEL" | "FILL_FIELD";
@@ -65,10 +69,11 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (req.type === "CLICK_LABEL" && req.label) {
+      const normalizedLabel = req.label.toLowerCase();
       const xp = `//*[self::button or self::a or self::input or self::span]
                   [contains(translate(normalize-space(.),
                   'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),
-                  '${req.label.toLowerCase()}')]`;
+                  '${escapeForXPath(normalizedLabel)}')]`;
       const el = document.evaluate(
         xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
       ).singleNodeValue as HTMLElement | null;
