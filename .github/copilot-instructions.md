@@ -148,7 +148,7 @@ npm run build        # Production build
 npm run preview      # Preview production build
 ```
 
-Note: Both `dev` and `dev:stable` run the same command (`vite --host`) - they serve for documentation purposes in the codebase.
+Note: The vite.config.ts includes stability settings (increased watch intervals, build delays) to prevent frequent reloads during development.
 
 ### Testing the Extension
 1. Open Chrome and navigate to `chrome://extensions/`
