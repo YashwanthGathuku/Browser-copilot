@@ -2,6 +2,19 @@ import React, { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import DOMPurify from "dompurify";
 import { inferIntentDeterministic } from "../common/intent-engine";
+import { 
+  Mic, 
+  MicOff, 
+  Send, 
+  Trash2, 
+  Radio, 
+  ScanLine, 
+  Sparkles,
+  User,
+  Loader2,
+  Copy,
+  Check
+} from "lucide-react";
 
 /* -------------------------- Local panel-only types -------------------------- */
 type Role = "user" | "assistant";
@@ -268,88 +281,119 @@ export default function App() {
 
   /* ---------------------------------- UI ----------------------------------- */
   return (
-    <div className="h-[600px] w-[380px] flex flex-col text-[13px] bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-900 dark:to-zinc-950">
+    <div className="h-[600px] w-[380px] flex flex-col text-[13px] bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50 dark:from-zinc-950 dark:via-slate-900 dark:to-zinc-950">
       {/* Header */}
-      <header className="px-3 py-2 border-b border-zinc-200/70 dark:border-zinc-800/70 flex items-center gap-2">
-        <div className="font-semibold">Nano Assistant</div>
+      <header className="px-4 py-3 border-b border-slate-200/80 dark:border-zinc-800/80 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm shadow-sm">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="flex items-center gap-2 flex-1">
+            <div className="p-1.5 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 shadow-md">
+              <Sparkles className="w-4 h-4 text-white" />
+            </div>
+            <div className="font-bold text-base bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+              Nano Assistant
+            </div>
+          </div>
 
-        <div className={clsx(
-          "ml-2 px-2 py-[2px] rounded-full text-[11px] font-medium",
-          status.startsWith("Error")
-            ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200"
-            : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
-        )}>
-          {status}
+          <select
+            className="rounded-lg border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 py-1.5 text-xs font-medium shadow-sm hover:border-blue-400 dark:hover:border-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            value={lang2}
+            onChange={(e) => setLang2((e.target.value as Lang2) || "en")}
+          >
+            <option value="en">🌐 EN</option>
+            <option value="es">🌐 ES</option>
+            <option value="ja">🌐 JA</option>
+          </select>
+
+          <button
+            onClick={() => setMessages([{ id: crypto.randomUUID(), role: "assistant", text: "Cleared. How can I help?", ts: Date.now() }])}
+            className="p-1.5 rounded-lg border border-slate-300 dark:border-zinc-700 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-700 transition-all shadow-sm"
+            title="Clear chat"
+          >
+            <Trash2 className="w-4 h-4 text-slate-600 dark:text-zinc-400" />
+          </button>
         </div>
 
-        {/* voice bars */}
-        <div className="ml-2 h-5 flex items-end gap-[2px]">
-          {isListening && [1,2,3,4,5].map(i => (
-            <div key={i} className="w-[3px] bg-blue-500 rounded-sm" style={{ height: `${Math.max(4, (voiceLevel / 2) + Math.random() * 8)}px` }} />
-          ))}
+        <div className="flex items-center gap-2">
+          <div className={clsx(
+            "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold shadow-sm transition-all",
+            status.startsWith("Error")
+              ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200 border border-red-200 dark:border-red-800"
+              : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800"
+          )}>
+            <div className={clsx(
+              "w-1.5 h-1.5 rounded-full animate-pulse",
+              status.startsWith("Error") ? "bg-red-500" : "bg-emerald-500"
+            )} />
+            {status}
+          </div>
+
+          {/* voice bars */}
+          {isListening && (
+            <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800">
+              <div className="h-4 flex items-end gap-[2px]">
+                {[1,2,3,4,5].map(i => (
+                  <div key={i} className="w-[3px] bg-blue-600 dark:bg-blue-400 rounded-full animate-pulse" style={{ height: `${Math.max(4, (voiceLevel / 2) + Math.random() * 10)}px`, animationDelay: `${i * 100}ms` }} />
+                ))}
+              </div>
+              <span className="text-[10px] font-medium text-blue-700 dark:text-blue-300 ml-1">Listening</span>
+            </div>
+          )}
         </div>
-
-        <select
-          className="ml-auto rounded-md border border-zinc-300 dark:border-zinc-700 bg-transparent px-2 py-1"
-          value={lang2}
-          onChange={(e) => setLang2((e.target.value as Lang2) || "en")}
-        >
-          <option value="en">EN</option>
-          <option value="es">ES</option>
-          <option value="ja">JA</option>
-        </select>
-
-        <button
-          onClick={() => setMessages([{ id: crypto.randomUUID(), role: "assistant", text: "Cleared. How can I help?", ts: Date.now() }])}
-          className="ml-2 rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-          title="Clear chat"
-        >
-          🧹
-        </button>
       </header>
 
       {/* Agent dashboard */}
-      <section className="px-3 py-2 border-b border-zinc-200/70 dark:border-zinc-800/70">
-        <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Active Agents</div>
-        {Object.values(agents).length === 0 && <div className="text-[11px] text-zinc-500">No agents running.</div>}
-        <div className="flex flex-col gap-2">
-          {Object.values(agents).map(ag => (
-            <div key={ag.id} className="rounded-md border border-zinc-200 dark:border-zinc-700 p-2">
-              <div className="flex items-center justify-between text-[12px]">
-                <div className="font-medium">{ag.title}</div>
-                <div className={clsx(
-                  "px-1.5 py-[1px] rounded text-[10px]",
-                  ag.state === "running" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
-                    : ag.state === "done" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
-                    : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200"
-                )}>{ag.state}</div>
+      {Object.values(agents).length > 0 && (
+        <section className="px-4 py-3 border-b border-slate-200/80 dark:border-zinc-800/80 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-sm">
+          <div className="text-xs font-bold text-slate-700 dark:text-zinc-300 mb-2 flex items-center gap-1.5">
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+            Active Agents
+          </div>
+          <div className="flex flex-col gap-2">
+            {Object.values(agents).map(ag => (
+              <div key={ag.id} className="rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 p-2.5 shadow-sm hover:shadow transition-shadow">
+                <div className="flex items-center justify-between text-[12px] mb-1.5">
+                  <div className="font-semibold text-slate-800 dark:text-zinc-100">{ag.title}</div>
+                  <div className={clsx(
+                    "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide",
+                    ag.state === "running" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
+                      : ag.state === "done" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
+                      : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200"
+                  )}>{ag.state}</div>
+                </div>
+                <div className="mt-1.5 h-2 rounded-full bg-slate-200 dark:bg-zinc-700 overflow-hidden shadow-inner">
+                  <div className={clsx(
+                    "h-full rounded-full transition-all duration-500 ease-out",
+                    ag.state === "done" ? "bg-gradient-to-r from-emerald-500 to-emerald-600"
+                      : ag.state === "error" ? "bg-gradient-to-r from-red-500 to-red-600"
+                      : "bg-gradient-to-r from-blue-500 to-indigo-600"
+                  )} style={{ width: `${ag.progress}%` }} />
+                </div>
+                {ag.note && <div className="mt-1.5 text-[11px] text-slate-600 dark:text-zinc-400 italic">{ag.note}</div>}
               </div>
-              <div className="mt-1 h-1.5 rounded bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
-                <div className="h-full bg-blue-600 dark:bg-blue-500" style={{ width: `${ag.progress}%` }} />
-              </div>
-              {ag.note && <div className="mt-1 text-[11px] text-zinc-500">{ag.note}</div>}
-            </div>
-          ))}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 scroll-smooth">
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 scroll-smooth">
         {messages.map(m => <Bubble key={m.id} role={m.role} text={m.text} ts={m.ts} />)}
         {busy && (
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2 animate-fade-in">
             <Avatar role="assistant" />
-            <div className="rounded-2xl rounded-bl-sm bg-zinc-100 dark:bg-zinc-800 px-3 py-2"><span className="typing-dots" /></div>
+            <div className="rounded-2xl rounded-bl-sm bg-gradient-to-br from-slate-100 to-slate-200 dark:from-zinc-800 dark:to-zinc-700 px-4 py-3 shadow-sm">
+              <span className="typing-dots" />
+            </div>
           </div>
         )}
         <div ref={bottomRef} />
       </div>
 
       {/* Controls */}
-      <div className="border-t border-zinc-200/70 dark:border-zinc-800/70 p-2">
-        <div className="flex gap-2">
+      <div className="border-t border-slate-200/80 dark:border-zinc-800/80 p-3 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm shadow-lg">
+        <div className="flex gap-2 mb-2">
           <textarea
-            className="flex-1 resize-none rounded-xl border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 resize-none rounded-xl border-2 border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:ring-blue-600 dark:focus:border-blue-600 transition-all placeholder:text-slate-400 dark:placeholder:text-zinc-500 shadow-sm"
             rows={2}
             placeholder='Try: "search hotels in DC and open the first result"'
             value={input}
@@ -359,31 +403,44 @@ export default function App() {
           <div className="flex flex-col gap-2">
             <button
               onClick={() => (isListening ? stopASR() : startASR())}
-              className={clsx("rounded-lg px-3 py-2 font-semibold", isListening ? "bg-red-600 text-white" : "bg-zinc-900 text-white dark:bg-zinc-700")}
+              className={clsx(
+                "rounded-xl px-3 py-2 font-semibold text-sm transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-1.5",
+                isListening 
+                  ? "bg-gradient-to-br from-red-600 to-red-700 text-white hover:from-red-700 hover:to-red-800 ring-2 ring-red-400 ring-offset-2 dark:ring-offset-zinc-900" 
+                  : "bg-gradient-to-br from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700"
+              )}
               title={isListening ? "Stop voice" : "Start voice"}
             >
-              {isListening ? "Stop" : "Voice"}
+              {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
             </button>
             <button
               onClick={() => void handleText(input)}
               disabled={!input.trim() || busy}
-              className={clsx("rounded-lg px-3 py-2 font-semibold", (!input.trim() || busy) ? "bg-zinc-300 text-zinc-500 cursor-not-allowed" : "bg-blue-600 text-white")}
-              title="Send"
+              className={clsx(
+                "rounded-xl px-3 py-2 font-semibold text-sm transition-all shadow-md flex items-center justify-center gap-1.5",
+                (!input.trim() || busy) 
+                  ? "bg-slate-300 text-slate-500 cursor-not-allowed" 
+                  : "bg-gradient-to-br from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700 hover:shadow-lg"
+              )}
+              title="Send message"
             >
-              Send
+              <Send className="w-4 h-4" />
             </button>
           </div>
         </div>
 
         {/* quick tools */}
-        <div className="mt-2 flex gap-2">
+        <div className="flex gap-2">
           <button
             onClick={async () => {
               try { const res: any = await sendToContent({ type: "PING" }); setStatus(res?.ok ? "Agent reachable" : "No content script"); }
               catch (e: any) { setStatus(e?.message?.includes("Page can’t receive") ? "This page can’t run content scripts" : "Ping failed"); }
             }}
-            className="rounded-md px-3 py-1.5 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700"
-          >📡 Ping</button>
+            className="flex-1 rounded-lg px-3 py-2 bg-gradient-to-br from-slate-100 to-slate-200 hover:from-slate-200 hover:to-slate-300 dark:from-zinc-800 dark:to-zinc-700 dark:hover:from-zinc-700 dark:hover:to-zinc-600 transition-all shadow-sm hover:shadow font-medium text-xs flex items-center justify-center gap-1.5"
+          >
+            <Radio className="w-3.5 h-3.5" />
+            Ping
+          </button>
 
           <button
             onClick={async () => {
@@ -398,8 +455,11 @@ export default function App() {
                 setMessages(m => [...m, { id: crypto.randomUUID(), role: "assistant", ts: Date.now(), text: "⚠️ " + (e?.message || "Scan failed") }]);
               }
             }}
-            className="rounded-md px-3 py-1.5 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700"
-          >🔍 Scan</button>
+            className="flex-1 rounded-lg px-3 py-2 bg-gradient-to-br from-slate-100 to-slate-200 hover:from-slate-200 hover:to-slate-300 dark:from-zinc-800 dark:to-zinc-700 dark:hover:from-zinc-700 dark:hover:to-zinc-600 transition-all shadow-sm hover:shadow font-medium text-xs flex items-center justify-center gap-1.5"
+          >
+            <ScanLine className="w-3.5 h-3.5" />
+            Scan
+          </button>
         </div>
       </div>
     </div>
@@ -410,31 +470,48 @@ export default function App() {
 function Avatar({ role }: { role: Role }) {
   return (
     <div className={clsx(
-      "size-7 rounded-full flex items-center justify-center select-none",
-      role === "user" ? "bg-blue-600 text-white" : "bg-zinc-200 dark:bg-zinc-700"
+      "size-8 rounded-full flex items-center justify-center select-none shadow-md transition-transform hover:scale-105",
+      role === "user" 
+        ? "bg-gradient-to-br from-blue-600 to-indigo-600 text-white ring-2 ring-blue-200 dark:ring-blue-900" 
+        : "bg-gradient-to-br from-slate-200 to-slate-300 dark:from-zinc-700 dark:to-zinc-600 ring-2 ring-slate-300 dark:ring-zinc-600"
     )}>
-      {role === "user" ? "🧑" : "✨"}
+      {role === "user" ? <User className="w-4 h-4" /> : <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
     </div>
   );
 }
+
 function Bubble({ role, text, ts }: { role: Role; text: string; ts: number }) {
   const isUser = role === "user";
-  const copy = async () => { try { await navigator.clipboard.writeText(text); } catch {} };
+  const [copied, setCopied] = useState(false);
+  const copy = async () => { 
+    try { 
+      await navigator.clipboard.writeText(text); 
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {} 
+  };
   return (
-    <div className={clsx("flex items-end gap-2", isUser ? "justify-end" : "justify-start")}>
+    <div className={clsx("flex items-end gap-2.5", isUser ? "justify-end" : "justify-start")}>
       {!isUser && <Avatar role="assistant" />}
       <div className={clsx("max-w-[78%] group relative", isUser ? "order-2" : "order-1")}>
         <div className={clsx(
-          "rounded-2xl px-3 py-2 whitespace-pre-wrap leading-relaxed shadow-sm",
-          isUser ? "bg-gradient-to-br from-blue-600 to-indigo-600 text-white rounded-br-sm"
-                 : "bg-zinc-100 dark:bg-zinc-800 rounded-bl-sm text-zinc-900 dark:text-zinc-100"
+          "rounded-2xl px-4 py-2.5 whitespace-pre-wrap leading-relaxed shadow-md transition-all group-hover:shadow-lg",
+          isUser 
+            ? "bg-gradient-to-br from-blue-600 to-indigo-600 text-white rounded-br-sm" 
+            : "bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-700 rounded-bl-sm text-slate-900 dark:text-zinc-100 border border-slate-200 dark:border-zinc-600"
         )}>
           {text}
         </div>
-        <div className={clsx("flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mt-1",
+        <div className={clsx("flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity mt-1.5",
           isUser ? "justify-end" : "justify-start")}>
-          <time className="text-[10px] text-zinc-500">{new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
-          <button onClick={copy} className="text-[10px] text-blue-600 hover:underline">Copy</button>
+          <time className="text-[10px] text-slate-500 dark:text-zinc-400 font-medium">{new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+          <button 
+            onClick={copy} 
+            className="flex items-center gap-1 text-[10px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors font-medium"
+          >
+            {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+            {copied ? "Copied!" : "Copy"}
+          </button>
         </div>
       </div>
       {isUser && <Avatar role="user" />}
