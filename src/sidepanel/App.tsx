@@ -191,7 +191,11 @@ export default function App() {
 
       // when the latest chunk is final, try to act
       if (ev.results[ev.results.length - 1]?.isFinal) {
-        await handleIntentFromText(textNow);
+        const autoActed = await handleIntentFromText(textNow);
+        if (autoActed) {
+          final = "";
+          setInput("");
+        }
       }
     };
 
