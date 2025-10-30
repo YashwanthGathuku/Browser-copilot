@@ -1,10 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import { crx } from "@crxjs/vite-plugin";
+import tailwindcss from "@tailwindcss/vite";
 import manifest from "./manifest.config";
 
 export default defineConfig({
-  plugins: [react(), crx({ manifest })],
+  plugins: [react(), tailwindcss(), crx({ manifest })],
   
   // Stable server configuration to prevent frequent reloads
   server: {

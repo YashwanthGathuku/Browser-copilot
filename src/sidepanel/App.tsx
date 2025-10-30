@@ -504,12 +504,12 @@ function Bubble({ role, text, ts }: { role: Role; text: string; ts: number }) {
       <div className={clsx("flex flex-col gap-1", isUser ? "items-end" : "items-start")}>
         <div className="group relative">
           <div className={clsx(
-            "relative px-4 py-3 rounded-2xl max-w-[85%] break-words whitespace-pre-wrap text-[14px] leading-relaxed shadow-sm transition-all duration-200",
+            "px-4 py-3 rounded-2xl max-w-[85%] break-words whitespace-pre-wrap text-[14px] leading-relaxed shadow-sm transition-all duration-200",
             isUser 
               ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-tr-sm" 
               : "bg-white dark:bg-zinc-800 text-gray-900 dark:text-gray-100 rounded-tl-sm border border-gray-200 dark:border-zinc-700"
           )}>
-            <p className="m-0">{text}</p>
+            <p>{text}</p>
           </div>
           <div className={clsx(
             "flex items-center gap-2 mt-1 px-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200",
