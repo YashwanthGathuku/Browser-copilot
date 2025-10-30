@@ -137,6 +137,7 @@
     "locate-path": "^6.0.0",
     "lodash.merge": "^4.6.2",
     "lru-cache": "^5.1.1",
+    "lucide-react": "^0.547.0",
     "magic-string": "^0.30.19",
     "merge2": "^1.4.1",
     "micromatch": "^4.0.8",
