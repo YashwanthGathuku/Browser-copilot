@@ -16,7 +16,8 @@ type ContentMsg =
   | { type: "SET_DATE"; selector: string; valueISO: string }
   | { type: "SELECT_OPTION"; selector: string; optionText: string }
   | { type: "SUBMIT"; selector?: string }
-  | { type: "DEMO" };
+  | { type: "DEMO" }
+  | { type: "SCAN_PAGE" };
 
 type SendResponse = (response?: unknown) => void;
 
@@ -139,6 +140,12 @@ chrome.runtime.onMessage.addListener((req: ContentMsg, _sender: chrome.runtime.M
       document.body.style.outline = "2px solid #60a5fa";
       setTimeout(() => (document.body.style.outline = ""), 1500);
       send({ ok: true });
+      return;
+    }
+
+    if (req.type === "SCAN_PAGE") {
+      const insights = scanPage();
+      send(insights);
       return;
     }
   })();

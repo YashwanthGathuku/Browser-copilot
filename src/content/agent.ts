@@ -12,7 +12,7 @@ import type {
   ElementDescriptor,
   PageInsights,
   Action,
-  AgentPlan
+//   AgentPlan
 } from "../types/agent-types";
 
 // Tiny banner so you know it injected
@@ -56,31 +56,88 @@ function accName(el: Element): string {
   return "";
 }
 
-function uniqueSelector(el: Element): string {
-  // Prefer clean id
-  if (el.id && !/\s/.test(el.id)) return `#${CSS.escape(el.id)}`;
+function escapeCSS(str: string): string {
+  return (CSS as any).escape ? (CSS as any).escape(str) : str.replace(/["\\]/g, "\\$&");
+}
 
+function getRobustSelector(el: Element): string {
+  // 1. ID (if stable)
+  if (el.id && !/\d{5,}/.test(el.id) && !/[a-f0-9]{12,}/i.test(el.id)) {
+    // Check if ID is truly unique in document
+    if (document.querySelectorAll(`#${escapeCSS(el.id)}`).length === 1) {
+      return `#${escapeCSS(el.id)}`;
+    }
+  }
+
+  // 2. Data attributes (common in testing)
+  const testAttrs = ["data-testid", "data-cy", "data-test", "data-qa"];
+  for (const attr of testAttrs) {
+    if (el.hasAttribute(attr)) {
+      const val = el.getAttribute(attr);
+      if (val) return `[${attr}="${escapeCSS(val)}"]`;
+    }
+  }
+
+  // 3. Name (for form fields)
+  if ((el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement) && el.name) {
+    return `${el.tagName.toLowerCase()}[name="${escapeCSS(el.name)}"]`;
+  }
+
+  // 4. Aria Label (if unique)
+  const aria = el.getAttribute("aria-label");
+  if (aria) {
+    const sel = `[aria-label="${escapeCSS(aria)}"]`;
+    if (document.querySelectorAll(sel).length === 1) return sel;
+  }
+
+  // 5. Placeholder (if unique input)
+  if (el instanceof HTMLInputElement && el.placeholder) {
+    const sel = `input[placeholder="${escapeCSS(el.placeholder)}"]`;
+    if (document.querySelectorAll(sel).length === 1) return sel;
+  }
+
+  // 6. Path fallback (improved)
   const parts: string[] = [];
   let node: Element | null = el;
-  while (node && parts.length < 5) {
+  while (node && node !== document.body && parts.length < 4) {
     let seg = node.tagName.toLowerCase();
-    if (node.classList.length) {
-      seg += "." + Array.from(node.classList)
-      .slice(0, 2)
-      .map((c) => CSS.escape(c))
-      .join(".");
+    
+    // Append ID if present (even if not unique globally, helps locally)
+    if (node.id) {
+      seg += `#${escapeCSS(node.id)}`;
+      parts.unshift(seg);
+      break; // ID is usually enough anchor
     }
-    const parentEl: Element | null = node.parentElement;
 
-    if (parentEl) {
-      const idx = Array.from(parentEl.children).indexOf(node) + 1;
-      seg += `:nth-child(${idx})`;
+    // Append classes (selective)
+    if (node.classList.length) {
+      const classes = Array.from(node.classList)
+        .filter(c => !c.match(/^(active|focus|hover|selected|ng-|react-|vue-)/)) // filter state classes
+        .slice(0, 2);
+      if (classes.length) {
+        seg += "." + classes.map(c => escapeCSS(c)).join(".");
+      }
     }
+
+    // Nth-child if needed
+    const parent: Element | null = node.parentElement;
+    if (parent) {
+      const siblings = Array.from(parent.children).filter((c: Element) => c.tagName === node!.tagName);
+      if (siblings.length > 1) {
+        const idx = Array.from(parent.children).indexOf(node) + 1;
+        seg += `:nth-child(${idx})`;
+      }
+    }
+
     parts.unshift(seg);
-    node = parentEl;
+    node = parent;
   }
+  
   return parts.join(" > ");
 }
+
+// Alias for compatibility
+const uniqueSelector = getRobustSelector;
 
 /* ------------------------------- extraction ------------------------------- */
 
@@ -148,9 +205,59 @@ function detectDateControls() {
   };
 }
 
+/* ------------------------------- vision context --------------------------- */
+
+function getAccessibilityTree(root: Element = document.body): any {
+  const tree: any = {
+    role: root.getAttribute("role") || root.tagName.toLowerCase(),
+    name: accName(root),
+  };
+
+  if (root.id) tree.id = root.id;
+  
+  // Add state
+  if (root instanceof HTMLInputElement || root instanceof HTMLTextAreaElement) {
+    tree.value = root.value;
+    tree.type = root.type;
+  }
+  if (root.getAttribute("aria-checked")) tree.checked = root.getAttribute("aria-checked");
+  if (root.getAttribute("aria-disabled")) tree.disabled = root.getAttribute("aria-disabled");
+  if (root.getAttribute("aria-expanded")) tree.expanded = root.getAttribute("aria-expanded");
+
+  // Add selector for interactive elements
+  const isInteractive = ["button", "a", "input", "select", "textarea", "summary"].includes(root.tagName.toLowerCase()) || 
+                        root.hasAttribute("onclick") || 
+                        root.getAttribute("role") === "button" ||
+                        root.getAttribute("role") === "link";
+  
+  if (isInteractive) {
+    tree.selector = uniqueSelector(root);
+  }
+
+  // Recursively add children, but limit depth and noise
+  const children = Array.from(root.children)
+    .map(child => getAccessibilityTree(child))
+    .filter(child => 
+      child.name || 
+      child.role === "input" || 
+      child.role === "button" || 
+      child.role === "link" || 
+      (child.children && child.children.length > 0)
+    );
+
+  if (children.length > 0) {
+    tree.children = children;
+  }
+
+  // Prune empty nodes that aren't interactive
+  if (!tree.name && !tree.children && !isInteractive && !tree.id) {
+    return null;
+  }
+
+  return tree;
+}
+
 /* ------------------------------- public API ------------------------------- */
-
-
 
 export function scanPage(): PageInsights {
   const insights: PageInsights = {
@@ -160,13 +267,14 @@ export function scanPage(): PageInsights {
     topText: firstParagraphs(),
     elements: extractElements(),
     controls: detectDateControls(),
+    accessibilityTree: getAccessibilityTree(), // Vision Context
   };
 
   try {
     visualFeedback.showFeedback({
-      type: "highlight",
+      type: "scan",
       message: `🕵️ Scanned ${insights.elements.length} elements`,
-      duration: 2000,
+      duration: 1500,
     });
   } catch {
     // visual feedback optional
@@ -186,8 +294,6 @@ export function scanPage(): PageInsights {
 }
 
 export async function executeAction(action: Action): Promise<{ ok: boolean; result?: any }> {
-  const cssEscape = (CSS as any)?.escape ?? ((s: string) => s.replace(/["\\]/g, "\\$&"));
-
   for (let attempts = 0; attempts < 3; attempts++) {
     try {
       switch (action.kind) {
@@ -221,13 +327,23 @@ export async function executeAction(action: Action): Promise<{ ok: boolean; resu
           if (action.selector) {
             el = document.querySelector<HTMLElement>(action.selector);
           }
+          
           if (!el && action.text) {
-            const t = cssEscape(action.text);
-            el =
-              (document.querySelector(
-                `[aria-label*="${t}" i], [title*="${t}" i]`
-              ) as HTMLElement) || null;
+            const t = action.text.trim();
+            // 1. Exact text match (XPath)
+            const xpath = `//*[text()="${t}"] | //input[@value="${t}"] | //button[contains(text(), "${t}")]`;
+            const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+            el = result.singleNodeValue as HTMLElement;
+
+            // 2. Fallback: aria-label, title, alt, placeholder
+            if (!el) {
+              const safeT = escapeCSS(t);
+              el = document.querySelector(
+                `[aria-label*="${safeT}" i], [title*="${safeT}" i], [alt*="${safeT}" i], [placeholder*="${safeT}" i]`
+              ) as HTMLElement;
+            }
           }
+          
           if (!el) return { ok: false, result: "Element not found" };
 
           try {

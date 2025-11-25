@@ -2,7 +2,7 @@
 import DOMPurify from 'dompurify';
 
 export interface VisualFeedbackOptions {
-  type: 'click' | 'fill' | 'scroll' | 'highlight' | 'navigate' | 'search';
+  type: 'click' | 'fill' | 'scroll' | 'highlight' | 'navigate' | 'search' | 'scan' | 'thinking';
   element?: HTMLElement;
   message?: string;
   duration?: number;
@@ -48,22 +48,29 @@ export class VisualFeedbackManager {
 
     switch (type) {
       case 'click':
-        this.highlightClick(element!, sanitizedMessage);
+        if (element) this.highlightClick(element, sanitizedMessage);
         break;
       case 'fill':
-        this.highlightFill(element!, sanitizedMessage);
+        if (element) this.highlightFill(element, sanitizedMessage);
         break;
       case 'scroll':
         this.showScrollFeedback(sanitizedMessage);
         break;
       case 'highlight':
-        this.highlightElement(element!, sanitizedMessage);
+        if (element) this.highlightElement(element, sanitizedMessage);
+        else this.showToast(sanitizedMessage, color); // Fallback if no element
         break;
       case 'navigate':
         this.showNavigationFeedback(sanitizedMessage, color);
         break;
       case 'search':
         this.showSearchFeedback(sanitizedMessage, color);
+        break;
+      case 'scan':
+        this.showScanFeedback(sanitizedMessage);
+        break;
+      case 'thinking':
+        this.showThinkingFeedback(sanitizedMessage);
         break;
       default:
         return; // Ignore unknown types
@@ -104,13 +111,13 @@ export class VisualFeedbackManager {
     if (message) this.showTooltip(element, message, '#3b82f6');
   }
 
-  private showScrollFeedback(message: string) {
+  private showToast(message: string, color: string) {
     const notification = document.createElement('div');
     notification.style.cssText = `
       position: fixed;
       top: 20px;
       right: 20px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: ${color};
       color: white;
       padding: 12px 20px;
       border-radius: 8px;
@@ -121,7 +128,6 @@ export class VisualFeedbackManager {
       z-index: 1000000;
     `;
     notification.textContent = message;
-    
     this.feedbackContainer!.appendChild(notification);
 
     setTimeout(() => {
@@ -132,32 +138,12 @@ export class VisualFeedbackManager {
     }, 2000);
   }
 
-  private showNavigationFeedback(message: string, color: string) {
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-      position: fixed;
-      top: 20px;
-      left: 20px;
-      background: ${color};
-      color: white;
-      padding: 12px 20px;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 500;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-      animation: slideInLeft 0.3s ease-out;
-      z-index: 1000000;
-    `;
-    notification.textContent = message;
-    
-    this.feedbackContainer!.appendChild(notification);
+  private showScrollFeedback(message: string) {
+    this.showToast(message, 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)');
+  }
 
-    setTimeout(() => {
-      notification.style.animation = 'slideOutLeft 0.3s ease-in';
-      setTimeout(() => {
-        if (notification.parentNode) notification.parentNode.removeChild(notification);
-      }, 300);
-    }, 2000);
+  private showNavigationFeedback(message: string, color: string) {
+    this.showToast(message, color);
   }
 
   private showSearchFeedback(message: string, color: string) {
@@ -177,13 +163,73 @@ export class VisualFeedbackManager {
       z-index: 1000000;
     `;
     notification.textContent = message;
-    
     this.feedbackContainer!.appendChild(notification);
 
     setTimeout(() => {
       notification.style.animation = 'slideOutLeft 0.3s ease-in';
       setTimeout(() => {
         if (notification.parentNode) notification.parentNode.removeChild(notification);
+      }, 300);
+    }, 2000);
+  }
+
+  private showScanFeedback(message: string) {
+    const scanLine = document.createElement('div');
+    scanLine.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+      box-shadow: 0 0 15px #3b82f6;
+      animation: scanDown 1.5s ease-in-out;
+      z-index: 1000000;
+    `;
+    this.feedbackContainer!.appendChild(scanLine);
+
+    if (message) this.showToast(message, '#3b82f6');
+
+    setTimeout(() => {
+      if (scanLine.parentNode) scanLine.parentNode.removeChild(scanLine);
+    }, 1500);
+  }
+
+  private showThinkingFeedback(message: string) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(4px);
+      padding: 8px 16px;
+      border-radius: 20px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #475569;
+      animation: fadeInDown 0.3s ease-out;
+      z-index: 1000000;
+    `;
+
+    overlay.innerHTML = `
+      <div class="thinking-dots">
+        <span></span><span></span><span></span>
+      </div>
+      <span>${message || 'Thinking...'}</span>
+    `;
+
+    this.feedbackContainer!.appendChild(overlay);
+
+    setTimeout(() => {
+      overlay.style.animation = 'fadeOutUp 0.3s ease-in';
+      setTimeout(() => {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
       }, 300);
     }, 2000);
   }
@@ -204,7 +250,7 @@ export class VisualFeedbackManager {
   private showTooltip(element: HTMLElement, message: string, color: string) {
     const rect = element.getBoundingClientRect();
     const tooltip = document.createElement('div');
-    
+
     tooltip.style.cssText = `
       position: fixed;
       top: ${rect.top - 40}px;
@@ -221,7 +267,7 @@ export class VisualFeedbackManager {
       animation: fadeInUp 0.3s ease-out;
       z-index: 1000001;
     `;
-    
+
     tooltip.textContent = message;
     this.feedbackContainer!.appendChild(tooltip);
 
@@ -261,69 +307,69 @@ style.textContent = `
   }
   
   @keyframes fadeInUp {
-    from {
-      opacity: 0;
-      transform: translateX(-50%) translateY(10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
+    from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
   }
   
   @keyframes fadeOutDown {
-    from {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-    to {
-      opacity: 0;
-      transform: translateX(-50%) translateY(10px);
-    }
+    from { opacity: 1; transform: translateX(-50%) translateY(0); }
+    to { opacity: 0; transform: translateX(-50%) translateY(10px); }
   }
   
   @keyframes slideInLeft {
-    from {
-      opacity: 0;
-      transform: translateX(-100%);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
+    from { opacity: 0; transform: translateX(-100%); }
+    to { opacity: 1; transform: translateX(0); }
   }
   
   @keyframes slideOutLeft {
-    from {
-      opacity: 1;
-      transform: translateX(0);
-    }
-    to {
-      opacity: 0;
-      transform: translateX(-100%);
-    }
+    from { opacity: 1; transform: translateX(0); }
+    to { opacity: 0; transform: translateX(-100%); }
   }
   
   @keyframes slideInRight {
-    from {
-      opacity: 0;
-      transform: translateX(100%);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
+    from { opacity: 0; transform: translateX(100%); }
+    to { opacity: 1; transform: translateX(0); }
   }
   
   @keyframes slideOutRight {
-    from {
-      opacity: 1;
-      transform: translateX(0);
-    }
-    to {
-      opacity: 0;
-      transform: translateX(100%);
-    }
+    from { opacity: 1; transform: translateX(0); }
+    to { opacity: 0; transform: translateX(100%); }
+  }
+
+  @keyframes scanDown {
+    0% { top: 0; opacity: 0; }
+    10% { opacity: 1; }
+    90% { opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+  }
+
+  @keyframes fadeInDown {
+    from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+  }
+
+  @keyframes fadeOutUp {
+    from { opacity: 1; transform: translateX(-50%) translateY(0); }
+    to { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+  }
+
+  .thinking-dots {
+    display: flex;
+    gap: 3px;
+  }
+  .thinking-dots span {
+    width: 4px;
+    height: 4px;
+    background: #475569;
+    border-radius: 50%;
+    animation: bounce 1s infinite;
+  }
+  .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
   }
 `;
 document.head.appendChild(style);
