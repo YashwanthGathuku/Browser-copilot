@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import clsx from "clsx";
 import DOMPurify from "dompurify";
 import { inferIntentDeterministic } from "../common/intent-engine";
@@ -7,6 +7,13 @@ import { TaskProgress } from "./components/TaskProgress";
 import { VoiceFeedback } from "./components/VoiceFeedback";
 import { ttsService } from "../common/tts-service";
 import { RecordingPanel } from "./components/RecordingPanel";
+import { CommandPalette, useCommandPalette } from "./components/CommandPalette";
+import { FocusModePanel } from "./components/FocusModePanel";
+import { WorkflowPanel } from "./components/WorkflowPanel";
+import { MemoryPanel } from "./components/MemoryPanel";
+import { memoryService, type PageMemory, type MemoryStats } from "../common/memory-service";
+import { focusService } from "../common/focus-mode";
+import { workflowService } from "../common/workflow-templates";
 
 /* -------------------------- Local panel-only types -------------------------- */
 type Role = "user" | "assistant";
@@ -943,7 +950,129 @@ export default function App() {
   }
 
   /* ---------------------------------- UI ----------------------------------- */
-  const [activeTab, setActiveTab] = useState<"chat" | "agents" | "recordings">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "agents" | "recordings" | "workflows" | "memory" | "focus">("chat");
+  
+  // Command Palette
+  const commandPalette = useCommandPalette();
+  
+  // Memory state
+  const [memories, setMemories] = useState<PageMemory[]>([]);
+  const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
+  
+  // Focus mode state
+  const [focusEnabled, setFocusEnabled] = useState(false);
+  const [focusBlockedCount, setFocusBlockedCount] = useState(0);
+  const [focusElapsedTime, setFocusElapsedTime] = useState(0);
+  
+  // Workflow state
+  const [workflowExecution, setWorkflowExecution] = useState<any>(null);
+  
+  // Load memories on mount
+  useEffect(() => {
+    const loadMemories = () => {
+      setMemories(memoryService.getRecent(50));
+      setMemoryStats(memoryService.getStats());
+    };
+    loadMemories();
+    const interval = setInterval(loadMemories, 30000); // Refresh every 30s
+    return () => clearInterval(interval);
+  }, []);
+  
+  // Focus mode timer
+  useEffect(() => {
+    if (!focusEnabled) return;
+    const interval = setInterval(() => {
+      const status = focusService.getStatus();
+      setFocusElapsedTime(status.elapsedTime);
+      setFocusBlockedCount(status.blockedCount);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [focusEnabled]);
+  
+  // Command handlers
+  const handleCommand = useCallback(async (commandId: string, input?: string) => {
+    switch (commandId) {
+      case 'ai-summarize':
+        void handleText('summarize this page');
+        break;
+      case 'ai-ask':
+        if (input) void handleText(input);
+        break;
+      case 'memory-search':
+        if (input) {
+          const results = memoryService.search(input);
+          setMemories(results.map(r => r.memory));
+          setActiveTab('memory');
+        }
+        break;
+      case 'memory-recent':
+        setMemories(memoryService.getRecent(50));
+        setActiveTab('memory');
+        break;
+      case 'focus-enable':
+        focusService.enable();
+        setFocusEnabled(true);
+        setActiveTab('focus');
+        break;
+      case 'focus-disable':
+        focusService.disable();
+        setFocusEnabled(false);
+        break;
+      case 'focus-reading':
+        focusService.enableReadingMode();
+        break;
+      case 'template-shopping':
+        if (input) {
+          const execution = workflowService.startExecution('shopping-best-deal', { product: input });
+          setWorkflowExecution(execution);
+          setActiveTab('workflows');
+        }
+        break;
+      case 'template-research':
+        if (input) {
+          const execution = workflowService.startExecution('research-deep-dive', { topic: input });
+          setWorkflowExecution(execution);
+          setActiveTab('workflows');
+        }
+        break;
+      case 'nav-scroll-top':
+        await sendToContent({ type: "SCROLL", direction: "up", amount: 10 });
+        break;
+      case 'nav-scroll-bottom':
+        await sendToContent({ type: "SCROLL", direction: "down", amount: 10 });
+        break;
+      case 'action-copy-url':
+        const tab = await getActiveTab();
+        if (tab?.url) {
+          await navigator.clipboard.writeText(tab.url);
+          setStatus("URL copied!");
+        }
+        break;
+      case 'settings-voice':
+        if (isListening) stopASR();
+        else startASR();
+        break;
+      default:
+        console.log('[Command] Unhandled:', commandId);
+    }
+  }, []);
+  
+  // Quick commands list for palette
+  const quickCommands = [
+    { id: 'ai-summarize', label: 'Summarize Page', description: 'Get an AI summary of the current page', category: 'ai', icon: '✨' },
+    { id: 'ai-ask', label: 'Ask AI', description: 'Ask a question about anything', category: 'ai', icon: '💬', requiresInput: true, inputPlaceholder: 'Ask a question...' },
+    { id: 'memory-search', label: 'Search Memory', description: 'Search pages you have visited', category: 'memory', icon: '🧠', requiresInput: true, inputPlaceholder: 'Search your browsing memory...' },
+    { id: 'memory-recent', label: 'Recent Pages', description: 'View recently visited pages', category: 'memory', icon: '🕐' },
+    { id: 'focus-enable', label: 'Enable Focus Mode', description: 'Block distracting sites', category: 'focus', icon: '🎯' },
+    { id: 'focus-disable', label: 'Disable Focus Mode', description: 'Stop focus mode', category: 'focus', icon: '🔓' },
+    { id: 'focus-reading', label: 'Reading Mode', description: 'Enter distraction-free reading mode', category: 'focus', icon: '📚' },
+    { id: 'template-shopping', label: 'Shopping Assistant', description: 'Find the best deals across sites', category: 'template', icon: '🛒', requiresInput: true, inputPlaceholder: 'What are you looking for?' },
+    { id: 'template-research', label: 'Research Mode', description: 'Start a focused research session', category: 'template', icon: '🔬', requiresInput: true, inputPlaceholder: 'Research topic...' },
+    { id: 'nav-scroll-top', label: 'Scroll to Top', description: 'Scroll to the top of the page', category: 'navigation', icon: '⬆️' },
+    { id: 'nav-scroll-bottom', label: 'Scroll to Bottom', description: 'Scroll to the bottom of the page', category: 'navigation', icon: '⬇️' },
+    { id: 'action-copy-url', label: 'Copy URL', description: 'Copy the current page URL', category: 'action', icon: '📋' },
+    { id: 'settings-voice', label: 'Toggle Voice', description: 'Enable/disable voice commands', category: 'settings', icon: '🎤' },
+  ];
 
   return (
     <div className="w-full max-w-[420px] h-full max-h-[90vh] flex flex-col text-[13px] text-zinc-900 dark:text-zinc-100 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-900 dark:to-zinc-950">
@@ -1026,43 +1155,41 @@ export default function App() {
         >
           🧹
         </button>
+        
+        {/* Quick Commands Button */}
+        <button
+          onClick={() => commandPalette.open()}
+          className="ml-2 rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-1"
+          title="Quick Commands (Ctrl+K)"
+        >
+          <span>⌘</span>
+          <span className="text-[10px] text-zinc-400">K</span>
+        </button>
       </header>
 
-      {/* Tab Bar */}
-      <div className="flex border-b border-zinc-200/70 dark:border-zinc-800/70">
-        <button
-          onClick={() => setActiveTab("chat")}
-          className={clsx(
-            "flex-1 py-2 text-center font-medium transition-colors",
-            activeTab === "chat"
-              ? "text-blue-600 border-b-2 border-blue-600 dark:text-blue-400"
-              : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-          )}
-        >
-          Chat
-        </button>
-        <button
-          onClick={() => setActiveTab("agents")}
-          className={clsx(
-            "flex-1 py-2 text-center font-medium transition-colors",
-            activeTab === "agents"
-              ? "text-blue-600 border-b-2 border-blue-600 dark:text-blue-400"
-              : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-          )}
-        >
-          Agents
-        </button>
-        <button
-          onClick={() => setActiveTab("recordings" as any)}
-          className={clsx(
-            "flex-1 py-2 text-center font-medium transition-colors",
-            activeTab === "recordings"
-              ? "text-blue-600 border-b-2 border-blue-600 dark:text-blue-400"
-              : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-          )}
-        >
-          🎥 Recordings
-        </button>
+      {/* Tab Bar - Scrollable for many tabs */}
+      <div className="flex overflow-x-auto border-b border-zinc-200/70 dark:border-zinc-800/70 scrollbar-hide">
+        {[
+          { id: 'chat', label: '💬 Chat' },
+          { id: 'workflows', label: '⚡ Workflows' },
+          { id: 'memory', label: '🧠 Memory' },
+          { id: 'focus', label: '🎯 Focus' },
+          { id: 'agents', label: '🤖 Agents' },
+          { id: 'recordings', label: '🎥 Record' },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={clsx(
+              "px-3 py-2 text-center font-medium transition-colors whitespace-nowrap text-xs",
+              activeTab === tab.id
+                ? "text-blue-600 border-b-2 border-blue-600 dark:text-blue-400"
+                : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {/* Voice mode indicator */}
@@ -1150,6 +1277,96 @@ export default function App() {
           </div>
         )}
 
+        {/* WORKFLOWS TAB */}
+        {activeTab === "workflows" && (
+          <div className="absolute inset-0 overflow-hidden">
+            <WorkflowPanel 
+              templates={workflowService.getAll()}
+              onExecute={async (templateId, variables) => {
+                try {
+                  const execution = workflowService.startExecution(templateId, variables);
+                  setWorkflowExecution(execution);
+                  
+                  const template = workflowService.getTemplate(templateId);
+                  if (!template) return;
+                  
+                  // Execute workflow steps
+                  for (let i = 0; i < template.steps.length; i++) {
+                    const stepInfo = workflowService.getNextStep(execution);
+                    if (!stepInfo) break;
+                    
+                    setWorkflowExecution({ ...execution, currentStep: i });
+                    
+                    if (stepInfo.intent) {
+                      await executeIntent(stepInfo.intent as any);
+                    }
+                    
+                    workflowService.completeStep(execution, true);
+                    
+                    // Wait between steps
+                    if (stepInfo.step.waitAfter) {
+                      await new Promise(r => setTimeout(r, stepInfo.step.waitAfter));
+                    }
+                  }
+                  
+                  setWorkflowExecution(null);
+                  setStatus("Workflow completed!");
+                } catch (e: any) {
+                  setStatus(`Workflow failed: ${e.message}`);
+                  setWorkflowExecution(null);
+                }
+              }}
+              currentExecution={workflowExecution ? {
+                templateId: workflowExecution.templateId,
+                currentStep: workflowExecution.currentStep,
+                totalSteps: workflowService.getTemplate(workflowExecution.templateId)?.steps.length || 0,
+                stepTitle: workflowService.getTemplate(workflowExecution.templateId)?.steps[workflowExecution.currentStep]?.title || '',
+              } : null}
+            />
+          </div>
+        )}
+
+        {/* MEMORY TAB */}
+        {activeTab === "memory" && (
+          <div className="absolute inset-0 overflow-hidden">
+            <MemoryPanel 
+              memories={memories}
+              stats={memoryStats}
+              onSearch={(query) => memoryService.search(query).map(r => r.memory)}
+              onDeleteMemory={(url) => {
+                memoryService.deleteMemory(url);
+                setMemories(memoryService.getRecent(50));
+              }}
+              onOpenPage={(url) => {
+                chrome.tabs.create({ url });
+              }}
+            />
+          </div>
+        )}
+
+        {/* FOCUS TAB */}
+        {activeTab === "focus" && (
+          <div className="absolute inset-0 overflow-y-auto">
+            <FocusModePanel 
+              enabled={focusEnabled}
+              onToggle={() => {
+                if (focusEnabled) {
+                  focusService.disable();
+                  setFocusEnabled(false);
+                } else {
+                  focusService.enable();
+                  setFocusEnabled(true);
+                }
+              }}
+              blockedCount={focusBlockedCount}
+              elapsedTime={focusElapsedTime}
+              onEnableReading={() => {
+                focusService.enableReadingMode();
+              }}
+            />
+          </div>
+        )}
+
         {/* CHAT TAB */}
 
         <div className={clsx("flex-1 flex flex-col overflow-hidden", activeTab !== "chat" && "hidden")}>
@@ -1224,6 +1441,12 @@ export default function App() {
                 }}
                 className="rounded-md px-3 py-1.5 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700"
               >🔍 Scan</button>
+              
+              <button
+                onClick={() => commandPalette.open()}
+                className="rounded-md px-3 py-1.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium hover:from-purple-600 hover:to-pink-600"
+                title="Quick Commands (Ctrl+K)"
+              >⌘K</button>
             </div>
           </div>
         </div>
@@ -1231,6 +1454,14 @@ export default function App() {
 
       {/* Voice Feedback Overlay */}
       <VoiceFeedback />
+      
+      {/* Command Palette */}
+      <CommandPalette
+        isOpen={commandPalette.isOpen}
+        onClose={commandPalette.close}
+        onExecute={handleCommand}
+        commands={quickCommands}
+      />
     </div>
   );
 }
