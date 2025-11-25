@@ -127,10 +127,12 @@ export class FocusModeService {
     if (sessionDuration || this.config.sessionDuration > 0) {
       const duration = sessionDuration || this.config.sessionDuration;
       this.sessionTimer = setTimeout(() => {
+        // Capture session before disable() clears it
+        const completedSession = this.currentSession;
         this.disable();
         this.emit('session-end', { 
           message: "Focus session complete! Great work! 🎉",
-          session: this.currentSession 
+          session: completedSession 
         });
       }, duration * 60 * 1000);
     }

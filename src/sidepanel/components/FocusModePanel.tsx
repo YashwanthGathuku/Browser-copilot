@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import clsx from 'clsx';
+import DOMPurify from 'dompurify';
 
 interface FocusModeProps {
   enabled: boolean;
@@ -250,7 +251,7 @@ export function ReadingModeOverlay({ enabled, onClose, content, title }: Reading
           <h1 className="text-3xl font-bold mb-8">{title}</h1>
           <div 
             className="prose dark:prose-invert max-w-none"
-            dangerouslySetInnerHTML={{ __html: content }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(content) }}
           />
         </div>
       </div>

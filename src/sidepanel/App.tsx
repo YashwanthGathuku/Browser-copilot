@@ -1297,8 +1297,9 @@ export default function App() {
                     
                     setWorkflowExecution({ ...execution, currentStep: i });
                     
-                    if (stepInfo.intent) {
-                      await executeIntent(stepInfo.intent as any);
+                    // Execute the intent if it's not a CUSTOM type
+                    if (stepInfo.intent && !('action' in stepInfo.intent)) {
+                      await executeIntent(stepInfo.intent);
                     }
                     
                     workflowService.completeStep(execution, true);

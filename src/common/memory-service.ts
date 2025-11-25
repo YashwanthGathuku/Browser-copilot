@@ -117,7 +117,9 @@ export class MemoryService {
     screenshot?: string;
   }): Promise<PageMemory> {
     const sanitizedTitle = DOMPurify.sanitize(pageData.title);
-    const sanitizedContent = pageData.content ? DOMPurify.sanitize(pageData.content).slice(0, 5000) : undefined;
+    // Truncate content before sanitizing for efficiency
+    const truncatedContent = pageData.content?.slice(0, 6000);
+    const sanitizedContent = truncatedContent ? DOMPurify.sanitize(truncatedContent).slice(0, 5000) : undefined;
     
     const domain = new URL(pageData.url).hostname;
     const category = this.detectCategory(pageData.url, sanitizedTitle);
@@ -305,7 +307,7 @@ export class MemoryService {
 
   private extractKeywords(title: string, content?: string): string[] {
     const text = `${title} ${content || ''}`.toLowerCase();
-    const words = text.split(/[\s,.!?;:'"()\[\]{}]+/);
+    const words = text.split(/[\s,.!?;:'"()[\]{}]+/);
     
     // Filter out common words
     const stopWords = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'and', 'or', 'but', 'if', 'then', 'else', 'when', 'where', 'why', 'how', 'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'of', 'to', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'between', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'all', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very']);
